@@ -90,13 +90,14 @@ module PgSlice
 
       i = 1
       batch_count = handler.batch_count(starting_id, max_source_id, batch_size)
+      first_batch = true
 
       if batch_count == 0
         log_sql "/* nothing to fill */"
       end
 
       while handler.should_continue?(starting_id, max_source_id)
-        where = handler.batch_where_condition(primary_key, starting_id, batch_size)
+        where = handler.batch_where_condition(primary_key, starting_id, batch_size, first_batch && options[:start])
         if starting_time
           where << " AND #{quote_ident(field)} >= #{sql_date(starting_time, cast)} AND #{quote_ident(field)} < #{sql_date(ending_time, cast)}"
         end
@@ -115,6 +116,7 @@ module PgSlice
                 WHERE #{where}
                 ORDER BY #{quote_ident(primary_key)}
                 LIMIT #{batch_size}
+                ON CONFLICT DO NOTHING
           SQL
         else
           query = <<~SQL
@@ -122,6 +124,7 @@ module PgSlice
             INSERT INTO #{quote_table(dest_table)} (#{fields})
                 SELECT #{fields} FROM #{quote_table(source_table)}
                 WHERE #{where}
+                ON CONFLICT DO NOTHING
           SQL
         end
 
@@ -141,6 +144,7 @@ module PgSlice
         end
         
         i += 1
+        first_batch = false
 
         if options[:sleep] && handler.should_continue?(starting_id, max_source_id)
           sleep(options[:sleep])

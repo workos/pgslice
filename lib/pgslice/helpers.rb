@@ -223,9 +223,10 @@ module PgSlice
         ((max_id - starting_id) / batch_size.to_f).ceil
       end
 
-      def batch_where_condition(primary_key, starting_id, batch_size)
+      def batch_where_condition(primary_key, starting_id, batch_size, inclusive = false)
         helpers = PgSlice::CLI.instance
-        "#{helpers.quote_ident(primary_key)} > #{helpers.quote(starting_id)} AND #{helpers.quote_ident(primary_key)} <= #{helpers.quote(starting_id + batch_size)}"
+        operator = inclusive ? ">=" : ">"
+        "#{helpers.quote_ident(primary_key)} #{operator} #{helpers.quote(starting_id)} AND #{helpers.quote_ident(primary_key)} <= #{helpers.quote(starting_id + batch_size)}"
       end
 
       def next_starting_id(starting_id, batch_size)
@@ -250,9 +251,9 @@ module PgSlice
         nil  # Unknown for ULIDs
       end
 
-      def batch_where_condition(primary_key, starting_id, batch_size)
-        helpers = PgSlice::CLI.instance
-        "#{helpers.quote_ident(primary_key)} > #{helpers.quote(starting_id)}"
+      def batch_where_condition(primary_key, starting_id, batch_size, inclusive = false)
+        operator = inclusive ? ">=" : ">"
+        "#{PG::Connection.quote_ident(primary_key)} #{operator} '#{starting_id}'"
       end
 
       def next_starting_id(starting_id, batch_size)
