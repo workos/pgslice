@@ -184,7 +184,9 @@ module PgSlice
     # ULID helper methods
     def ulid?(value)
       return false unless value.is_a?(String)
-      value.match?(/\A[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{26}\z/)
+      # Match pure ULIDs or ULIDs with prefixes
+      value.match?(/\A[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{26}\z/) ||
+        value.match?(/.*[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{26}\z/)
     end
 
     def numeric_id?(value)
