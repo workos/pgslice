@@ -6,6 +6,9 @@ module PgSlice
       year: "YYYY"
     }
 
+    # ULID epoch start corresponding to 01/01/1970
+    DEFAULT_ULID = "00000H5A406P0C3DQMCQ5MV6WQ"
+
     protected
 
     # output
@@ -176,6 +179,87 @@ module PgSlice
 
     def quote_table(table)
       table.quote_table
+    end
+
+    # ULID helper methods
+    def ulid?(value)
+      return false unless value.is_a?(String)
+      value.match?(/\A[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{26}\z/)
+    end
+
+    def numeric_id?(value)
+      value.is_a?(Numeric) || (value.is_a?(String) && value.match?(/\A\d+\z/))
+    end
+
+    def id_type(value)
+      return :numeric if numeric_id?(value)
+      return :ulid if ulid?(value)
+      :unknown
+    end
+
+    # Factory method to get the appropriate ID handler
+    def id_handler(sample_id)
+      if ulid?(sample_id)
+        UlidHandler.new
+      else
+        NumericHandler.new
+      end
+    end
+
+    class NumericHandler
+      def min_value
+        1
+      end
+
+      def predecessor(id)
+        id - 1
+      end
+
+      def should_continue?(current_id, max_id)
+        current_id < max_id
+      end
+
+      def batch_count(starting_id, max_id, batch_size)
+        ((max_id - starting_id) / batch_size.to_f).ceil
+      end
+
+      def batch_where_condition(primary_key, starting_id, batch_size)
+        helpers = PgSlice::CLI.instance
+        "#{helpers.quote_ident(primary_key)} > #{helpers.quote(starting_id)} AND #{helpers.quote_ident(primary_key)} <= #{helpers.quote(starting_id + batch_size)}"
+      end
+
+      def next_starting_id(starting_id, batch_size)
+        starting_id + batch_size
+      end
+    end
+
+    class UlidHandler
+      def min_value
+        PgSlice::Helpers::DEFAULT_ULID
+      end
+
+      def predecessor(id)
+        PgSlice::Helpers::DEFAULT_ULID
+      end
+
+      def should_continue?(current_id, max_id)
+        current_id < max_id
+      end
+
+      def batch_count(starting_id, max_id, batch_size)
+        nil  # Unknown for ULIDs
+      end
+
+      def batch_where_condition(primary_key, starting_id, batch_size)
+        helpers = PgSlice::CLI.instance
+        "#{helpers.quote_ident(primary_key)} > #{helpers.quote(starting_id)}"
+      end
+
+      def next_starting_id(starting_id, batch_size)
+        # For ULIDs, we need to get the max ID from the current batch
+        # This will be handled in the fill logic
+        nil
+      end
     end
 
     def quote_no_schema(table)
