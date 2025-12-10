@@ -222,17 +222,18 @@ module PgSlice
       end
 
       def should_continue?(current_id, max_id)
+        return false if max_id.nil? || current_id.nil?
         current_id < max_id
       end
 
       def batch_count(starting_id, max_id, batch_size)
+        return 0 if max_id.nil? || starting_id.nil?
         ((max_id - starting_id) / batch_size.to_f).ceil
       end
 
       def batch_where_condition(primary_key, starting_id, batch_size, inclusive = false)
-        helpers = PgSlice::CLI.instance
         operator = inclusive ? ">=" : ">"
-        "#{helpers.quote_ident(primary_key)} #{operator} #{helpers.quote(starting_id)} AND #{helpers.quote_ident(primary_key)} <= #{helpers.quote(starting_id + batch_size)}"
+        "#{PG::Connection.quote_ident(primary_key)} #{operator} #{starting_id} AND #{PG::Connection.quote_ident(primary_key)} <= #{starting_id + batch_size}"
       end
 
       def next_starting_id(starting_id, batch_size)
@@ -250,10 +251,12 @@ module PgSlice
       end
 
       def should_continue?(current_id, max_id)
+        return false if max_id.nil? || current_id.nil?
         current_id < max_id
       end
 
       def batch_count(starting_id, max_id, batch_size)
+        return 0 if max_id.nil? || starting_id.nil?
         nil  # Unknown for ULIDs
       end
 

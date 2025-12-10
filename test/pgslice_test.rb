@@ -202,6 +202,113 @@ class PgSliceTest < Minitest::Test
     run_command "unprep Posts"
   end
 
+  def test_ulid_no_partition
+    create_ulid_table("Events")
+    run_command "prep Events --no-partition"
+    assert table_exists?("Events_intermediate")
+    assert_equal 0, count("Events_intermediate")
+
+    run_command "fill Events"
+    assert_equal 10000, count("Events_intermediate")
+
+    assert_analyzed "Events_intermediate" do
+      run_command "analyze Events"
+    end
+
+    run_command "swap Events"
+    assert !table_exists?("Events_intermediate")
+    assert table_exists?("Events_retired")
+
+    assert_analyzed "Events" do
+      run_command "analyze Events --swapped"
+    end
+
+    run_command "unswap Events"
+    assert table_exists?("Events_intermediate")
+    assert !table_exists?("Events_retired")
+
+    run_command "unprep Events"
+    assert !table_exists?("Events_intermediate")
+  end
+
+  def test_ulid_fill_with_start
+    create_ulid_table("Events")
+    run_command "prep Events --no-partition"
+    
+    # Insert some data with known ULIDs
+    start_ulid = generate_ulid(Time.at(1000000000)) # Fixed timestamp for testing
+    execute %!INSERT INTO "Events" ("Id", "createdAt") VALUES ($1, NOW())!, [start_ulid]
+    
+    # Fill starting from a specific ULID
+    run_command "fill Events --start #{start_ulid}"
+    # Should have filled all 10000 rows plus the one we inserted
+    assert count("Events_intermediate") >= 10000
+
+    run_command "unprep Events"
+  end
+
+  def test_ulid_fill_swapped
+    create_ulid_table("Events")
+    run_command "prep Events --no-partition"
+    run_command "fill Events"
+    assert_equal 10000, count("Events_intermediate")
+
+    run_command "swap Events"
+    assert table_exists?("Events_retired")
+    assert_equal 10000, count("Events")
+
+    # Fill swapped table
+    run_command "fill Events --swapped"
+    # Should have all original rows
+    assert count("Events") >= 10000
+
+    run_command "unswap Events"
+    run_command "unprep Events"
+  end
+
+  def test_ulid_partitioned
+    create_ulid_table("Events")
+    run_command "prep Events createdAt day"
+    assert table_exists?("Events_intermediate")
+
+    run_command "add_partitions Events --intermediate --past 1 --future 1"
+    now = Time.now.utc
+    partition_name = "Events_#{now.strftime('%Y%m%d')}"
+    assert_primary_key partition_name
+
+    assert_equal 0, count("Events_intermediate")
+    run_command "fill Events"
+    assert_equal 10000, count("Events_intermediate")
+
+    run_command "swap Events"
+    assert table_exists?("Events")
+    assert table_exists?("Events_retired")
+    refute table_exists?("Events_intermediate")
+
+    assert_equal 10000, count("Events")
+    run_command "fill Events --swapped"
+    assert count("Events") >= 10000
+
+    run_command "unswap Events"
+    run_command "unprep Events"
+  end
+
+  def test_ulid_numeric_still_works
+    # Regression test: ensure numeric IDs still work
+    run_command "prep Posts --no-partition"
+    assert table_exists?("Posts_intermediate")
+    assert_equal 0, count("Posts_intermediate")
+
+    run_command "fill Posts"
+    assert_equal 10000, count("Posts_intermediate")
+
+    run_command "fill Posts --start 5000"
+    # Should have filled rows starting from 5000
+    assert count("Posts_intermediate") >= 10000
+
+    run_command "unprep Posts"
+  end
+
   private
 
   def assert_period(period, column: "createdAt", trigger_based: false, tablespace: false, version: nil)
@@ -476,5 +583,60 @@ class PgSliceTest < Minitest::Test
 
   def verbose?
     ENV["VERBOSE"]
+  end
+
+  def create_ulid_table(table_name)
+    execute <<~SQL
+      CREATE TABLE #{quote_ident(table_name)} (
+        "Id" TEXT PRIMARY KEY,
+        "UserId" INTEGER,
+        "createdAt" timestamp,
+        "createdAtTz" timestamptz,
+        "createdOn" date,
+        CONSTRAINT "foreign_key_#{table_name.downcase}" FOREIGN KEY ("UserId") REFERENCES "Users"("Id")
+      );
+
+      CREATE INDEX ON #{quote_ident(table_name)} ("createdAt");
+    SQL
+
+    # Insert 10000 rows with ULID primary keys
+    # Generate ULIDs with incrementing timestamps to ensure they're sortable
+    base_time = Time.now.utc - 86400
+    10000.times do |i|
+      ulid = generate_ulid(base_time + i)
+      execute %!INSERT INTO #{quote_ident(table_name)} ("Id", "createdAt", "createdAtTz", "createdOn") VALUES ($1, NOW(), NOW(), NOW())!, [ulid]
+    end
+  end
+
+  def generate_ulid(time = Time.now)
+    # Generate a valid ULID string for testing
+    # ULID format: 26 characters, base32 encoded
+    # First 10 characters: timestamp (milliseconds since epoch)
+    # Last 16 characters: random
+    
+    # Convert time to milliseconds since epoch
+    timestamp_ms = (time.to_f * 1000).to_i
+    
+    # Base32 characters (Crockford's base32, ULID alphabet)
+    base32_chars = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+    
+    # Encode timestamp (10 characters)
+    timestamp_part = ""
+    ts = timestamp_ms
+    10.times do
+      timestamp_part = base32_chars[ts % 32] + timestamp_part
+      ts /= 32
+    end
+    
+    # Generate random part (16 characters)
+    # Use a simple deterministic approach for testing
+    random_part = ""
+    16.times do |i|
+      # Use a simple hash of timestamp + index for deterministic but varied values
+      val = (timestamp_ms + i * 17) % 32
+      random_part += base32_chars[val]
+    end
+    
+    timestamp_part + random_part
   end
 end

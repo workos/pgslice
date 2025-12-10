@@ -84,6 +84,12 @@ module PgSlice
         end
       end
 
+      # If max_source_id is nil, there's nothing to fill
+      if max_source_id.nil? && !options[:start]
+        log_sql "/* nothing to fill */"
+        return
+      end
+
       starting_id = max_dest_id
       fields = source_table.columns.map { |c| quote_ident(c) }.join(", ")
       batch_size = options[:batch_size]
@@ -107,7 +113,7 @@ module PgSlice
 
         batch_label = batch_count ? "#{i} of #{batch_count}" : "batch #{i}"
         
-        if handler.is_a?(UlidHandler)
+        if handler.is_a?(Helpers::UlidHandler)
           # For ULIDs, add ORDER BY and LIMIT to the query
           query = <<~SQL
             /* #{batch_label} */
@@ -131,7 +137,7 @@ module PgSlice
         run_query(query)
 
         # Update starting_id for next batch
-        if handler.is_a?(UlidHandler)
+        if handler.is_a?(Helpers::UlidHandler)
           # For ULIDs, get the max ID from the batch we just processed
           last_id_query = <<~SQL
             SELECT MAX(#{quote_ident(primary_key)}) FROM #{quote_table(dest_table)}

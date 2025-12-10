@@ -124,9 +124,20 @@ module PgSlice
       conditions << where if where
       query << " WHERE #{conditions.join(" AND ")}" if conditions.any?
       result = execute(query, params)[0]["max"]
-      return result if result.nil?
       
-      # For ULIDs, return as string; for numeric, convert to int
+      # For ULIDs, return as string (or nil if empty); for numeric, convert to int (0 if nil)
+      if result.nil?
+        # Check if we're dealing with ULIDs by sampling a row
+        sample_query = "SELECT #{quote_ident(primary_key)} FROM #{quote_table} LIMIT 1"
+        sample_result = execute(sample_query)[0]
+        if sample_result && sample_result[primary_key]
+          handler = id_handler(sample_result[primary_key])
+          return handler.is_a?(Helpers::UlidHandler) ? nil : 0
+        else
+          return 0  # Default to numeric (0) when no sample available
+        end
+      end
+      
       numeric_id?(result) ? result.to_i : result
     end
 
