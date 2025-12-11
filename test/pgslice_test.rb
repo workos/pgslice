@@ -609,34 +609,8 @@ class PgSliceTest < Minitest::Test
   end
 
   def generate_ulid(time = Time.now)
-    # Generate a valid ULID string for testing
-    # ULID format: 26 characters, base32 encoded
-    # First 10 characters: timestamp (milliseconds since epoch)
-    # Last 16 characters: random
-    
-    # Convert time to milliseconds since epoch
-    timestamp_ms = (time.to_f * 1000).to_i
-    
-    # Base32 characters (Crockford's base32, ULID alphabet)
-    base32_chars = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-    
-    # Encode timestamp (10 characters)
-    timestamp_part = ""
-    ts = timestamp_ms
-    10.times do
-      timestamp_part = base32_chars[ts % 32] + timestamp_part
-      ts /= 32
-    end
-    
-    # Generate random part (16 characters)
-    # Use a simple deterministic approach for testing
-    random_part = ""
-    16.times do |i|
-      # Use a simple hash of timestamp + index for deterministic but varied values
-      val = (timestamp_ms + i * 17) % 32
-      random_part += base32_chars[val]
-    end
-    
-    timestamp_part + random_part
+    # Use the ulid gem to generate ULIDs
+    # The gem supports generating ULIDs with a specific timestamp
+    ULID.generate(time)
   end
 end
