@@ -138,7 +138,8 @@ module PgSlice
         end
       end
       
-      numeric_id?(result) ? result.to_i : result
+      handler = id_handler(result)
+      handler.is_a?(Helpers::NumericHandler) ? result.to_i : result
     end
 
     def min_id(primary_key, column, cast, starting_time, where)
@@ -163,7 +164,8 @@ module PgSlice
       end
       
       # Return the actual result with proper type
-      numeric_id?(result) ? result.to_i : result
+      handler = id_handler(result)
+      handler.is_a?(Helpers::NumericHandler) ? result.to_i : result
     end
 
     # ensure this returns partitions in the correct order
@@ -254,10 +256,6 @@ module PgSlice
 
     def sql_date(*args)
       PgSlice::CLI.instance.send(:sql_date, *args)
-    end
-
-    def numeric_id?(value)
-      PgSlice::CLI.instance.send(:numeric_id?, value)
     end
 
     def id_handler(sample_id)
