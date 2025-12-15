@@ -236,7 +236,8 @@ module PgSlice
         "#{PG::Connection.quote_ident(primary_key)} #{operator} #{starting_id} AND #{PG::Connection.quote_ident(primary_key)} <= #{starting_id + batch_size}"
       end
 
-      def next_starting_id(starting_id, batch_size)
+      def next_starting_id(starting_id, batch_size, table, primary_key, executor = nil)
+        # For numeric IDs, just add the batch size
         starting_id + batch_size
       end
     end
@@ -265,10 +266,14 @@ module PgSlice
         "#{PG::Connection.quote_ident(primary_key)} #{operator} '#{starting_id}'"
       end
 
-      def next_starting_id(starting_id, batch_size)
-        # For ULIDs, we need to get the max ID from the current batch
-        # This will be handled in the fill logic
-        nil
+      def next_starting_id(starting_id, batch_size, table, primary_key, executor)
+        # For ULIDs, get the max ID from the batch we just processed
+        last_id_query = <<~SQL
+          SELECT MAX(#{PG::Connection.quote_ident(primary_key)}) FROM #{table.quote_table}
+          WHERE #{batch_where_condition(primary_key, starting_id, batch_size, false)}
+        SQL
+        result = executor.send(:execute, last_id_query)[0]["max"]
+        return result || starting_id
       end
     end
 

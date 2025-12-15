@@ -98,7 +98,7 @@ module PgSlice
       batch_count = handler.batch_count(starting_id, max_source_id, batch_size)
       first_batch = true
 
-      if batch_count == 0
+      if handler.is_a?(Helpers::NumericHandler) && batch_count == 0
         log_sql "/* nothing to fill */"
       end
 
@@ -137,17 +137,7 @@ module PgSlice
         run_query(query)
 
         # Update starting_id for next batch
-        if handler.is_a?(Helpers::UlidHandler)
-          # For ULIDs, get the max ID from the batch we just processed
-          last_id_query = <<~SQL
-            SELECT MAX(#{quote_ident(primary_key)}) FROM #{quote_table(dest_table)}
-            WHERE #{quote_ident(primary_key)} > #{quote(starting_id)}
-          SQL
-          result = execute(last_id_query)[0]["max"]
-          starting_id = result || starting_id
-        else
-          starting_id = handler.next_starting_id(starting_id, batch_size)
-        end
+        starting_id = handler.next_starting_id(starting_id, batch_size, dest_table, primary_key, self)
         
         i += 1
         first_batch = false
