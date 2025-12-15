@@ -113,26 +113,15 @@ module PgSlice
 
         batch_label = batch_count ? "#{i} of #{batch_count}" : "batch #{i}"
         
-        if handler.is_a?(Helpers::UlidHandler)
-          # For ULIDs, add ORDER BY and LIMIT to the query
-          query = <<~SQL
-            /* #{batch_label} */
-            INSERT INTO #{quote_table(dest_table)} (#{fields})
-                SELECT #{fields} FROM #{quote_table(source_table)}
-                WHERE #{where}
-                ORDER BY #{quote_ident(primary_key)}
-                LIMIT #{batch_size}
-                ON CONFLICT DO NOTHING
-          SQL
-        else
-          query = <<~SQL
-            /* #{batch_label} */
-            INSERT INTO #{quote_table(dest_table)} (#{fields})
-                SELECT #{fields} FROM #{quote_table(source_table)}
-                WHERE #{where}
-                ON CONFLICT DO NOTHING
-          SQL
-        end
+        query = handler.insert_query(
+          batch_label,
+          quote_table(dest_table),
+          fields,
+          quote_table(source_table),
+          where,
+          primary_key,
+          batch_size
+        )
 
         run_query(query)
 

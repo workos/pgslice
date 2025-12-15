@@ -240,6 +240,16 @@ module PgSlice
         # For numeric IDs, just add the batch size
         starting_id + batch_size
       end
+
+      def insert_query(batch_label, dest_table, fields, source_table, where, primary_key, batch_size)
+        <<~SQL
+          /* #{batch_label} */
+          INSERT INTO #{dest_table} (#{fields})
+              SELECT #{fields} FROM #{source_table}
+              WHERE #{where}
+              ON CONFLICT DO NOTHING
+        SQL
+      end
     end
 
     class UlidHandler
@@ -274,6 +284,18 @@ module PgSlice
         SQL
         result = executor.send(:execute, last_id_query)[0]["max"]
         return result || starting_id
+      end
+
+      def insert_query(batch_label, dest_table, fields, source_table, where, primary_key, batch_size)
+        <<~SQL
+          /* #{batch_label} */
+          INSERT INTO #{dest_table} (#{fields})
+              SELECT #{fields} FROM #{source_table}
+              WHERE #{where}
+              ORDER BY #{PG::Connection.quote_ident(primary_key)}
+              LIMIT #{batch_size}
+              ON CONFLICT DO NOTHING
+        SQL
       end
     end
 
