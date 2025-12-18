@@ -144,6 +144,171 @@ class PgSliceTest < Minitest::Test
     assert_error "Table not found", "unprep Items"
   end
 
+  def test_synchronize_missing_table
+    assert_error "Table not found", "synchronize Items"
+  end
+
+  def test_synchronize
+    run_command "prep Posts --no-partition"
+    assert table_exists?("Posts_intermediate")
+
+    run_command "fill Posts"
+    assert_equal 10000, count("Posts_intermediate")
+
+    # Modify a row in source to create a difference (use a nullable column)
+    execute %!UPDATE "Posts" SET "createdAt" = '2020-01-01' WHERE "Id" = 1!
+
+    # Run synchronize
+    run_command "synchronize Posts --window-size 1000", expected_stderr: /Synchronization complete/
+
+    # Verify the difference was fixed
+    result = execute(%!SELECT "createdAt" FROM "Posts_intermediate" WHERE "Id" = 1!)
+    assert_equal "2020-01-01 00:00:00", result.first["createdAt"]
+
+    run_command "unprep Posts"
+  end
+
+  def test_enable_retired_mirroring_missing_table
+    assert_error "Table not found", "enable_retired_mirroring Items"
+  end
+
+  def test_enable_retired_mirroring
+    run_command "prep Posts --no-partition"
+    run_command "fill Posts"
+    run_command "swap Posts"
+    assert table_exists?("Posts_retired")
+
+    run_command "enable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers enabled for Posts/
+
+    run_command "disable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers disabled for Posts/
+    run_command "unswap Posts"
+    run_command "unprep Posts"
+  end
+
+  def test_disable_retired_mirroring_missing_table
+    assert_error "Table not found", "disable_retired_mirroring Items"
+  end
+
+  def test_disable_retired_mirroring
+    run_command "prep Posts --no-partition"
+    run_command "fill Posts"
+    run_command "swap Posts"
+    assert table_exists?("Posts_retired")
+
+    run_command "enable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers enabled for Posts/
+    run_command "disable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers disabled for Posts/
+
+    run_command "unswap Posts"
+    run_command "unprep Posts"
+  end
+
+  def test_ulid_no_partition
+    create_ulid_table("Events")
+    run_command "prep Events --no-partition"
+    assert table_exists?("Events_intermediate")
+    assert_equal 0, count("Events_intermediate")
+
+    run_command "fill Events"
+    assert_equal 10000, count("Events_intermediate")
+
+    assert_analyzed "Events_intermediate" do
+      run_command "analyze Events"
+    end
+
+    run_command "swap Events"
+    assert !table_exists?("Events_intermediate")
+    assert table_exists?("Events_retired")
+
+    assert_analyzed "Events" do
+      run_command "analyze Events --swapped"
+    end
+
+    run_command "unswap Events"
+    assert table_exists?("Events_intermediate")
+    assert !table_exists?("Events_retired")
+
+    run_command "unprep Events"
+    assert !table_exists?("Events_intermediate")
+  end
+
+  def test_ulid_fill_with_start
+    create_ulid_table("Events")
+    run_command "prep Events --no-partition"
+    
+    # Insert some data with known ULIDs
+    start_ulid = generate_ulid(Time.at(1000000000)) # Fixed timestamp for testing
+    execute %!INSERT INTO "Events" ("Id", "createdAt") VALUES ($1, NOW())!, [start_ulid]
+    
+    # Fill starting from a specific ULID
+    run_command "fill Events --start #{start_ulid}"
+    # Should have filled all 10000 rows plus the one we inserted
+    assert count("Events_intermediate") >= 10000
+
+    run_command "unprep Events"
+  end
+
+  def test_ulid_fill_swapped
+    create_ulid_table("Events")
+    run_command "prep Events --no-partition"
+    run_command "fill Events"
+    assert_equal 10000, count("Events_intermediate")
+
+    run_command "swap Events"
+    assert table_exists?("Events_retired")
+    assert_equal 10000, count("Events")
+
+    # Fill swapped table
+    run_command "fill Events --swapped"
+    # Should have all original rows
+    assert count("Events") >= 10000
+
+    run_command "unswap Events"
+    run_command "unprep Events"
+  end
+
+  def test_ulid_partitioned
+    create_ulid_table("Events")
+    run_command "prep Events createdAt day"
+    assert table_exists?("Events_intermediate")
+
+    run_command "add_partitions Events --intermediate --past 1 --future 1"
+    now = Time.now.utc
+    partition_name = "Events_#{now.strftime('%Y%m%d')}"
+    assert_primary_key partition_name
+
+    assert_equal 0, count("Events_intermediate")
+    run_command "fill Events"
+    assert_equal 10000, count("Events_intermediate")
+
+    run_command "swap Events"
+    assert table_exists?("Events")
+    assert table_exists?("Events_retired")
+    refute table_exists?("Events_intermediate")
+
+    assert_equal 10000, count("Events")
+    run_command "fill Events --swapped"
+    assert count("Events") >= 10000
+
+    run_command "unswap Events"
+    run_command "unprep Events"
+  end
+
+  def test_ulid_numeric_still_works
+    # Regression test: ensure numeric IDs still work
+    run_command "prep Posts --no-partition"
+    assert table_exists?("Posts_intermediate")
+    assert_equal 0, count("Posts_intermediate")
+
+    run_command "fill Posts"
+    assert_equal 10000, count("Posts_intermediate")
+
+    run_command "fill Posts --start 5000"
+    # Should have filled rows starting from 5000
+    assert count("Posts_intermediate") >= 10000
+
+    run_command "unprep Posts"
+  end
+
   def test_enable_mirroring_missing_table
     assert_error "Table not found", "enable_mirroring Items"
   end
