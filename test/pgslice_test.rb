@@ -514,4 +514,33 @@ class PgSliceTest < Minitest::Test
   def verbose?
     ENV["VERBOSE"]
   end
+
+  def create_ulid_table(table_name)
+    execute <<~SQL
+      CREATE TABLE #{quote_ident(table_name)} (
+        "Id" TEXT PRIMARY KEY,
+        "UserId" INTEGER,
+        "createdAt" timestamp,
+        "createdAtTz" timestamptz,
+        "createdOn" date,
+        CONSTRAINT "foreign_key_#{table_name.downcase}" FOREIGN KEY ("UserId") REFERENCES "Users"("Id")
+      );
+
+      CREATE INDEX ON #{quote_ident(table_name)} ("createdAt");
+    SQL
+
+    # Insert 10000 rows with ULID primary keys
+    # Generate ULIDs with incrementing timestamps to ensure they're sortable
+    base_time = Time.now.utc - 86400
+    10000.times do |i|
+      ulid = generate_ulid(base_time + i)
+      execute %!INSERT INTO #{quote_ident(table_name)} ("Id", "createdAt", "createdAtTz", "createdOn") VALUES ($1, NOW(), NOW(), NOW())!, [ulid]
+    end
+  end
+
+  def generate_ulid(time = Time.now)
+    # Use the ulid gem to generate ULIDs
+    # The gem supports generating ULIDs with a specific timestamp
+    ULID.generate(time)
+  end
 end
