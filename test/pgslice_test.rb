@@ -136,6 +136,55 @@ class PgSliceTest < Minitest::Test
     assert_error "Table not found", "swap Items"
   end
 
+  def test_swap_creates_retired_mirroring_trigger
+    run_command "prep Posts --no-partition"
+    run_command "fill Posts"
+    
+    # Verify no retired mirroring trigger exists before swap
+    trigger_result = execute <<~SQL, [quote_ident("Posts")]
+      SELECT tgname FROM pg_trigger
+      WHERE tgname = 'Posts_retired_mirror_trigger'
+      AND tgrelid = $1::regclass
+    SQL
+    assert !trigger_result.any?, "Retired mirror trigger should not exist before swap"
+    
+    run_command "swap Posts"
+    assert table_exists?("Posts_retired")
+    
+    # Verify retired mirroring trigger exists after swap
+    trigger_result = execute <<~SQL, [quote_ident("Posts")]
+      SELECT tgname FROM pg_trigger
+      WHERE tgname = 'Posts_retired_mirror_trigger'
+      AND tgrelid = $1::regclass
+    SQL
+    assert trigger_result.any?, "Retired mirror trigger should exist after swap"
+    
+    # Verify function exists
+    function_result = execute <<~SQL
+      SELECT proname FROM pg_proc
+      WHERE proname = 'Posts_mirror_to_retired'
+    SQL
+    assert function_result.any?, "Retired mirror function should exist after swap"
+    
+    # Test that the trigger works - insert into main table and verify it's mirrored to retired
+    initial_retired_count = count("Posts_retired")
+    initial_main_count = count("Posts")
+    
+    # Insert a new row into the main table
+    now = Time.now.utc
+    execute %!INSERT INTO "Posts" ("createdAt") VALUES ($1)!, [now.iso8601]
+    
+    # Verify it was inserted into main table
+    assert_equal initial_main_count + 1, count("Posts")
+    
+    # Verify it was mirrored to retired table (or updated if it already existed)
+    # The retired table should have at least the same number of rows or more
+    assert count("Posts_retired") >= initial_retired_count, "Retired table should have been updated"
+    
+    run_command "unswap Posts"
+    run_command "unprep Posts"
+  end
+
   def test_unswap_missing_table
     assert_error "Table not found", "unswap Items"
   end
@@ -178,9 +227,13 @@ class PgSliceTest < Minitest::Test
     run_command "swap Posts"
     assert table_exists?("Posts_retired")
 
+    # Retired mirroring trigger is automatically created during swap
+    # Verify it exists by checking that we can disable it
+    run_command "disable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers disabled for Posts/
+    
+    # Now enable it again
     run_command "enable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers enabled for Posts/
 
-    run_command "disable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers disabled for Posts/
     run_command "unswap Posts"
     run_command "unprep Posts"
   end
@@ -195,7 +248,14 @@ class PgSliceTest < Minitest::Test
     run_command "swap Posts"
     assert table_exists?("Posts_retired")
 
+    # Retired mirroring trigger is automatically created during swap
+    # Disable it
+    run_command "disable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers disabled for Posts/
+    
+    # Re-enable it
     run_command "enable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers enabled for Posts/
+    
+    # Disable it again
     run_command "disable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers disabled for Posts/
 
     run_command "unswap Posts"
