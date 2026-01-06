@@ -472,31 +472,42 @@ Releases are automatically created when a version tag is pushed to the repositor
 
 ### Steps to Create a Release
 
-1. Update the version in `lib/pgslice/version.rb`:
+1. Create a new branch with name `v0.7.1.workos3`
+
+2. Update the version in `lib/pgslice/version.rb`:
    ```ruby
-   VERSION = "0.8.0"
+   VERSION = "0.7.1.workos3"
    ```
 
-2. Commit and push the version change:
+3. Commit and push the version change:
    ```sh
    git add lib/pgslice/version.rb
-   git commit -m "Bump version to 0.8.0"
+   git commit -m "Bump version to v0.7.1.workos3"
    git push
    ```
 
-3. Create and push a version tag:
-   ```sh
-   git tag v0.8.0
-   git push origin v0.8.0
-   ```
+4. Start a PR, get it reviewed and merged:
+![Pull Request Example](docs/pr.png)
+![Commit Example](docs/commit.png)
 
-4. The GitHub Actions workflow will automatically:
-   - Build the gem
-   - Create a GitHub release with the tag name
-   - Attach the built gem file to the release
-   - Generate release notes
 
-Alternatively, you can manually trigger the release workflow from the GitHub Actions tab using the "workflow_dispatch" option.
+5. Create a release through github UI:
+
+![Draft a new release](docs/draft-release.png)
+
+6. Choose to create a new tag
+
+![Create a new tag](docs/new-tag.png)
+![Create new tag on publish](docs/new-tag-publish.png)
+
+7. Make sure to match version number with tag and hit generate release notes
+
+![Prepare release notes](docs/release-notes.png)
+
+8. Publish
+
+![Prepare release notes](docs/publish.png)
+
 
 The release workflow is configured in `.github/workflows/release.yml`.
 
