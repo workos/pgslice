@@ -329,7 +329,30 @@ module PgSlice
 
     # mirroring triggers
 
-    def enable_mirroring_triggers(table)
+    def disable_mirroring_trigger_queries(table)
+      function_name = "#{table.name}_mirror_to_intermediate"
+      trigger_name = "#{table.name}_mirror_trigger"
+
+      queries = []
+
+      # drop trigger
+      queries << <<~SQL
+        DROP TRIGGER IF EXISTS #{quote_ident(trigger_name)} ON #{quote_table(table)};
+      SQL
+
+      # drop function
+      queries << <<~SQL
+        DROP FUNCTION IF EXISTS #{quote_ident(function_name)}();
+      SQL
+
+      queries
+    end
+
+    def disable_mirroring_triggers(table)
+      run_queries(disable_mirroring_trigger_queries(table))
+    end
+
+    def enable_mirroring_trigger_queries(table)
       intermediate_table = table.intermediate_table
       function_name = "#{table.name}_mirror_to_intermediate"
       trigger_name = "#{table.name}_mirror_trigger"
@@ -356,24 +379,42 @@ module PgSlice
         $$ LANGUAGE plpgsql;
       SQL
 
-      # create trigger
+      # drop trigger if exists, then create
+      queries << <<~SQL
+        DROP TRIGGER IF EXISTS #{quote_ident(trigger_name)} ON #{quote_table(table)};
+      SQL
+
       queries << <<~SQL
         CREATE TRIGGER #{quote_ident(trigger_name)}
         AFTER INSERT OR UPDATE OR DELETE ON #{quote_table(table)}
         FOR EACH ROW EXECUTE FUNCTION #{quote_ident(function_name)}();
       SQL
 
-      run_queries(queries)
+      queries
+    end
+
+    def enable_mirroring_triggers(table)
+      run_queries(enable_mirroring_trigger_queries(table))
     end
 
     # retired mirroring triggers
 
-    def enable_retired_mirroring_triggers(table)
+    def enable_retired_mirroring_trigger_queries(table)
       retired_table = table.retired_table
       function_name = "#{table.name}_mirror_to_retired"
       trigger_name = "#{table.name}_retired_mirror_trigger"
 
       queries = []
+
+      # Build ON CONFLICT clause for INSERT
+      primary_keys = table.primary_key
+      conflict_clause = if primary_keys && primary_keys.any?
+        conflict_target = primary_keys.map { |pk| quote_ident(pk) }.join(", ")
+        "ON CONFLICT (#{conflict_target}) DO UPDATE SET #{mirror_set_clause(table)}"
+      else
+        # If no primary key, use DO NOTHING to avoid conflicts
+        "ON CONFLICT DO NOTHING"
+      end
 
       # create mirror function
       queries << <<~SQL
@@ -387,7 +428,8 @@ module PgSlice
             UPDATE #{quote_table(retired_table)} SET #{mirror_set_clause(table)} WHERE #{mirror_where_clause(table, 'OLD')};
             RETURN NEW;
           ELSIF TG_OP = 'INSERT' THEN
-            INSERT INTO #{quote_table(retired_table)} (#{mirror_column_list(table)}) VALUES (#{mirror_new_tuple_list(table)});
+            INSERT INTO #{quote_table(retired_table)} (#{mirror_column_list(table)}) VALUES (#{mirror_new_tuple_list(table)})
+            #{conflict_clause};
             RETURN NEW;
           END IF;
           RETURN NULL;
@@ -395,33 +437,22 @@ module PgSlice
         $$ LANGUAGE plpgsql;
       SQL
 
-      # create trigger
+      # drop trigger if exists, then create
+      queries << <<~SQL
+        DROP TRIGGER IF EXISTS #{quote_ident(trigger_name)} ON #{quote_table(table)};
+      SQL
+
       queries << <<~SQL
         CREATE TRIGGER #{quote_ident(trigger_name)}
         AFTER INSERT OR UPDATE OR DELETE ON #{quote_table(table)}
         FOR EACH ROW EXECUTE FUNCTION #{quote_ident(function_name)}();
       SQL
 
-      run_queries(queries)
+      queries
     end
 
-    def disable_mirroring_triggers(table)
-      function_name = "#{table.name}_mirror_to_intermediate"
-      trigger_name = "#{table.name}_mirror_trigger"
-
-      queries = []
-
-      # drop trigger
-      queries << <<~SQL
-        DROP TRIGGER IF EXISTS #{quote_ident(trigger_name)} ON #{quote_table(table)};
-      SQL
-
-      # drop function
-      queries << <<~SQL
-        DROP FUNCTION IF EXISTS #{quote_ident(function_name)}();
-      SQL
-
-      run_queries(queries)
+    def enable_retired_mirroring_triggers(table)
+      run_queries(enable_retired_mirroring_trigger_queries(table))
     end
 
     def mirror_where_clause(table, record)
@@ -446,7 +477,7 @@ module PgSlice
       table.columns.map { |column| "NEW.#{quote_ident(column)}" }.join(", ")
     end
 
-    def disable_retired_mirroring_triggers(table)
+    def disable_retired_mirroring_trigger_queries(table)
       function_name = "#{table.name}_mirror_to_retired"
       trigger_name = "#{table.name}_retired_mirror_trigger"
 
@@ -462,7 +493,11 @@ module PgSlice
         DROP FUNCTION IF EXISTS #{quote_ident(function_name)}();
       SQL
 
-      run_queries(queries)
+      queries
+    end
+
+    def disable_retired_mirroring_triggers(table)
+      run_queries(disable_retired_mirroring_trigger_queries(table))
     end
   end
 end

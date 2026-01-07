@@ -10,11 +10,16 @@ module PgSlice
       assert_table(retired_table)
       assert_no_table(intermediate_table)
 
-      queries = [
-        "ALTER TABLE #{quote_table(table)} RENAME TO #{quote_no_schema(intermediate_table)};",
-        "ALTER TABLE #{quote_table(retired_table)} RENAME TO #{quote_no_schema(table)};"
-      ]
+      queries = []
 
+      # Drop the retired mirroring trigger before unswap
+      queries.concat(disable_retired_mirroring_trigger_queries(table))
+
+      # Swap the tables back
+      queries << "ALTER TABLE #{quote_table(table)} RENAME TO #{quote_no_schema(intermediate_table)};"
+      queries << "ALTER TABLE #{quote_table(retired_table)} RENAME TO #{quote_no_schema(table)};"
+
+      # Update sequence ownership
       table.sequences.each do |sequence|
         queries << "ALTER SEQUENCE #{quote_ident(sequence["sequence_schema"])}.#{quote_ident(sequence["sequence_name"])} OWNED BY #{quote_table(table)}.#{quote_ident(sequence["related_column"])};"
       end
