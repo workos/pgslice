@@ -6,19 +6,30 @@ interface Context extends BaseContext {
 }
 
 export class BaseCommand extends Command<Context> {
-  url = Option.String("DATABASE_URL", {
-    description: "Database connection URL",
-    required: true,
+  url = Option.String("--url", {
+    description: "Database connection URL (default: PGSLICE_URL env var)",
+    required: false,
   });
 
   dryRun = Option.Boolean("--dry-run", false, {
-    description: "Run the command in dry-run mode",
+    description: "Print statements without executing",
   });
 
+  protected getDatabaseUrl(): string {
+    const url = this.url ?? process.env.PGSLICE_URL;
+    if (!url) {
+      throw new Error("Set PGSLICE_URL or use the --url option");
+    }
+    return url;
+  }
+
   async execute(): Promise<number> {
-    this.context.pgslice = await Pgslice.connect(new URL(this.url), {
-      dryRun: this.dryRun,
-    });
+    this.context.pgslice = await Pgslice.connect(
+      new URL(this.getDatabaseUrl()),
+      {
+        dryRun: this.dryRun,
+      },
+    );
 
     return 0;
   }
