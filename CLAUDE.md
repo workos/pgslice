@@ -84,3 +84,9 @@ feature set to do things like manage partitions, etc.
 This means that we should strive to abstract the core behavior a bit more than
 the original Ruby implementation did, allowing us to expose it in both the CLI
 and this new module interface.
+
+## Porting Process
+
+As you work through porting commands over and make commits, try to include the
+conversation up to that point in the commit description. We want to leave a
+paper trail for how we are using AI to assist in the port.
