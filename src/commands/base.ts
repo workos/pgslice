@@ -23,14 +23,12 @@ export class BaseCommand extends Command<Context> {
     return url;
   }
 
-  async execute(): Promise<number> {
+  async execute() {
     this.context.pgslice = await Pgslice.connect(
       new URL(this.getDatabaseUrl()),
       {
         dryRun: this.dryRun,
       },
     );
-
-    return 0;
   }
 }
