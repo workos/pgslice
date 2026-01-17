@@ -31,7 +31,11 @@ export abstract class BaseCommand extends Command<Context> {
       },
     );
 
-    return await this.perform();
+    try {
+      return await this.perform();
+    } finally {
+      await this.context.pgslice.close();
+    }
   }
 
   /**

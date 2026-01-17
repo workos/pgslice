@@ -40,4 +40,11 @@ export class Pgslice {
 
     return this.#connection;
   }
+
+  async close(): Promise<void> {
+    if (this.#connection) {
+      await this.#connection.end();
+      this.#connection = null;
+    }
+  }
 }
