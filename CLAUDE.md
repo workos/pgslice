@@ -90,3 +90,15 @@ and this new module interface.
 As you work through porting commands over and make commits, try to include the
 conversation up to that point in the commit description. We want to leave a
 paper trail for how we are using AI to assist in the port.
+
+All changes should be verified by running tests. This means adding _new_ tests
+in the TypeScript port and also verifying it passes the _old_ suite by running
+the following:
+
+```sh
+# Run the new tests
+$ npm run test
+
+# Run the old tests to detect any regressions
+$ USE_TYPESCRIPT_PORT=1 bundle exec rake test
+```
