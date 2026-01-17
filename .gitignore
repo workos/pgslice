@@ -9,3 +9,10 @@
 /tmp/
 *.DS_Store*
 *.env
+
+# TypeScript
+/node_modules/
+/dist/
+
+# Claude Code
+/.claude/
