@@ -4,4 +4,6 @@ require "minitest/autorun"
 require "minitest/pride"
 require "ulid"
 
+Dotenv.load(".test.env")
+
 PgSlice::CLI.exit_on_failure = false
