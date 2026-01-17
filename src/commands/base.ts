@@ -5,7 +5,7 @@ interface Context extends BaseContext {
   pgslice: Pgslice;
 }
 
-export class BaseCommand extends Command<Context> {
+export abstract class BaseCommand extends Command<Context> {
   url = Option.String("--url", {
     description: "Database connection URL (default: PGSLICE_URL env var)",
     required: false,
@@ -23,12 +23,19 @@ export class BaseCommand extends Command<Context> {
     return url;
   }
 
-  async execute() {
+  async execute(): Promise<number | void> {
     this.context.pgslice = await Pgslice.connect(
       new URL(this.getDatabaseUrl()),
       {
         dryRun: this.dryRun,
       },
     );
+
+    return await this.perform();
   }
+
+  /**
+   * The main logic of the command goes here. Avoid overriding `execute`.
+   */
+  protected abstract perform(): Promise<number | void>;
 }

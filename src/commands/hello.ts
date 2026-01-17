@@ -8,8 +8,7 @@ export class HelloCommand extends BaseCommand {
     description: "A placeholder command to verify the CLI works",
   });
 
-  async execute(): Promise<number> {
+  override async perform() {
     this.context.stdout.write("Hello from pgslice!\n");
-    return 0;
   }
 }
