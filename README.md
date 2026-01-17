@@ -31,65 +31,68 @@ All commands support these global options:
 
 2. Specify your database credentials
 
-  ```sh
-  export PGSLICE_URL=postgres://localhost/myapp_development
-  ```
+```sh
+export PGSLICE_URL=postgres://localhost/myapp_development
+```
 
 3. Create an intermediate table
 
-  ```sh
-  pgslice prep <table> <column> <period>
-  ```
+```sh
+pgslice prep <table> <column> <period>
+```
 
-  The column should be a `timestamp`, `timestamptz`, or `date` column and period can be `day`, `month`, or `year`.
+The column should be a `timestamp`, `timestamptz`, or `date` column and period can be `day`, `month`, or `year`.
 
-  This creates a partitioned table named `<table>_intermediate` using range partitioning.
+This creates a partitioned table named `<table>_intermediate` using range partitioning.
 
-  Options:
-  - `--no-partition`: Create a non-partitioned intermediate table (useful for one-off tasks)
-  - `--trigger-based`: Use trigger-based partitioning (for PostgreSQL 9.x)
+Options:
+
+- `--no-partition`: Create a non-partitioned intermediate table (useful for one-off tasks)
+- `--trigger-based`: Use trigger-based partitioning (for PostgreSQL 9.x)
 
 4. Add partitions to the intermediate table
 
-  ```sh
-  pgslice add_partitions <table> --intermediate --past 3 --future 3
-  ```
+```sh
+pgslice add_partitions <table> --intermediate --past 3 --future 3
+```
 
-  Use the `--past` and `--future` options to control the number of partitions.
+Use the `--past` and `--future` options to control the number of partitions.
 
 5. Enable mirroring triggers for live data changes
 
-  ```sh
-  pgslice enable_mirroring <table>
-  ```
+```sh
+pgslice enable_mirroring <table>
+```
 
-  This enables triggers that automatically mirror INSERT, UPDATE, and DELETE operations from the original table to the intermediate table during the partitioning process. This ensures that any data changes made after you start the partitioning process are captured in both tables.
+This enables triggers that automatically mirror INSERT, UPDATE, and DELETE operations from the original table to the intermediate table during the partitioning process. This ensures that any data changes made after you start the partitioning process are captured in both tables.
 
-6. *Optional, for tables with data* - Fill the partitions in batches with data from the original table
+6. _Optional, for tables with data_ - Fill the partitions in batches with data from the original table
 
-  ```sh
-  pgslice fill <table>
-  ```
+```sh
+pgslice fill <table>
+```
 
-  Options:
-  - `--batch-size`: Number of rows per batch (default: `10000`)
-  - `--sleep`: Seconds to sleep between batches (default: `0`)
-  - `--swapped`: Fill from retired table to partitioned table (after swap)
-  - `--source-table`: Source table name (default: original table or retired table if `--swapped`)
-  - `--dest-table`: Destination table name (default: intermediate table or partitioned table if `--swapped`)
-  - `--start`: Primary key value to start from (numeric or ULID)
-  - `--where`: Additional WHERE conditions to filter rows
+Options:
 
-  To sync data across different databases, check out [pgsync](https://github.com/ankane/pgsync).
+- `--batch-size`: Number of rows per batch (default: `10000`)
+- `--sleep`: Seconds to sleep between batches (default: `0`)
+- `--swapped`: Fill from retired table to partitioned table (after swap)
+- `--source-table`: Source table name (default: original table or retired table if `--swapped`)
+- `--dest-table`: Destination table name (default: intermediate table or partitioned table if `--swapped`)
+- `--start`: Primary key value to start from (numeric or ULID)
+- `--where`: Additional WHERE conditions to filter rows
+
+To sync data across different databases, check out [pgsync](https://github.com/ankane/pgsync).
 
 7. Analyze tables
 
-  ```sh
-  pgslice analyze <table>
-  ```
+```sh
+pgslice analyze <table>
+```
 
-  Options:
-  - `--swapped`: Analyze the partitioned table (after swap)
+Options:
+
+- `--swapped`: Analyze the partitioned table (after swap)
 
 8. Sync/Validate the tables
 
@@ -102,6 +105,7 @@ pgslice synchronize <table> [options]
 ```
 
 Options:
+
 - `--source-table`: Source table to compare (default: `<table>`)
 - `--target-table`: Target table to compare (default: `<table>_intermediate`)
 - `--primary-key`: Primary key column name (default: detected from table)
@@ -113,22 +117,23 @@ Options:
 
 9. Swap the intermediate table with the original table
 
-  ```sh
-  pgslice swap <table>
-  ```
+```sh
+pgslice swap <table>
+```
 
-  The original table is renamed `<table>_retired` and the intermediate table is renamed `<table>`.
+The original table is renamed `<table>_retired` and the intermediate table is renamed `<table>`.
 
-  Options:
-  - `--lock-timeout`: Lock timeout for the swap operation (default: `5s`)
+Options:
+
+- `--lock-timeout`: Lock timeout for the swap operation (default: `5s`)
 
 10. Disable mirroring triggers
 
-  ```sh
-  pgslice disable_mirroring <table>
-  ```
+```sh
+pgslice disable_mirroring <table>
+```
 
-  After the swap, the original mirroring triggers are no longer needed since the tables have been swapped.
+After the swap, the original mirroring triggers are no longer needed since the tables have been swapped.
 
 11. Enable Reverse Mirroring (now-partitioned table to retired table)
 
@@ -144,24 +149,24 @@ pgslice enable_retired_mirroring <table>  # undo with pgslice disable_retired_mi
 
 This step should not be needed if you did the pgslice synchronize in step 8.
 
-  ```sh
-  pgslice fill <table> --swapped
-  ```
+```sh
+pgslice fill <table> --swapped
+```
 
 13. Disable retired mirroring triggers
 
-  ```sh
-  pgslice disable_retired_mirroring <table>
-  ```
+```sh
+pgslice disable_retired_mirroring <table>
+```
 
-  Once you're confident the retired table is no longer needed and you're ready to drop it, disable the retired mirroring triggers.
+Once you're confident the retired table is no longer needed and you're ready to drop it, disable the retired mirroring triggers.
 
 14. Back up the retired table with a tool like [pg_dump](https://www.postgresql.org/docs/current/static/app-pgdump.html) and drop it
 
-  ```sql
-  pg_dump -c -Fc -t <table>_retired $PGSLICE_URL > <table>_retired.dump
-  psql -c "DROP TABLE <table>_retired" $PGSLICE_URL
-  ```
+```sql
+pg_dump -c -Fc -t <table>_retired $PGSLICE_URL > <table>_retired.dump
+psql -c "DROP TABLE <table>_retired" $PGSLICE_URL
+```
 
 ## Sample Output
 
@@ -475,11 +480,13 @@ Releases are automatically created when a version tag is pushed to the repositor
 1. Create a new branch with name `v0.7.1.workos3`
 
 2. Update the version in `lib/pgslice/version.rb`:
+
    ```ruby
    VERSION = "0.7.1.workos3"
    ```
 
 3. Commit and push the version change:
+
    ```sh
    git add lib/pgslice/version.rb
    git commit -m "Bump version to v0.7.1.workos3"
@@ -487,9 +494,8 @@ Releases are automatically created when a version tag is pushed to the repositor
    ```
 
 4. Start a PR, get it reviewed and merged:
-![Pull Request Example](docs/pr.png)
-![Commit Example](docs/commit.png)
-
+   ![Pull Request Example](docs/pr.png)
+   ![Commit Example](docs/commit.png)
 
 5. Create a release through github UI:
 
@@ -507,7 +513,6 @@ Releases are automatically created when a version tag is pushed to the repositor
 8. Publish
 
 ![Prepare release notes](docs/publish.png)
-
 
 The release workflow is configured in `.github/workflows/release.yml`.
 

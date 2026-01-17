@@ -5,8 +5,8 @@ run-name: Release ${{ github.ref_name }}
 on:
   push:
     tags:
-      - 'v*'  # Triggers on version tags like v0.7.1
-  workflow_dispatch:  # Allows manual triggering
+      - "v*" # Triggers on version tags like v0.7.1
+  workflow_dispatch: # Allows manual triggering
 
 jobs:
   build-gem:
@@ -49,4 +49,3 @@ jobs:
         with:
           files: pgslice-*.gem
           generate_release_notes: true
-
