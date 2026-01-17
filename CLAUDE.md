@@ -56,6 +56,8 @@ This new version will use the following node packages:
 * [`clipanion`](https://github.com/arcanis/clipanion) - CLI parsing library with
   similar semantics to `thor` from the Ruby version, but individual commands
   are represented by classes.
+* [`vitest`](https://github.com/vitest-dev/vitest) - Testing framework. We'll
+  both unit and "end-to-end" tests in the TypeScript port.
 
 ## Parity
 
