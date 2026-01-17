@@ -600,9 +600,16 @@ class PgSliceTest < Minitest::Test
       puts "$ pgslice #{command}"
       puts
     end
-    stdout, stderr = capture_io do
-      PgSlice::CLI.start("#{command} --url #{url}".split(" "))
+
+    if use_typescript_port?
+      cli_path = File.expand_path("../../dist/bin/pgslice.js", __FILE__)
+      stdout, stderr, _status = Open3.capture3("node", cli_path, *"#{command} --url #{url}".split(" "))
+    else
+      stdout, stderr = capture_io do
+        PgSlice::CLI.start("#{command} --url #{url}".split(" "))
+      end
     end
+
     if verbose?
       puts stdout
       puts
