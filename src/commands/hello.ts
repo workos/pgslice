@@ -1,6 +1,7 @@
 import { Command } from "clipanion";
+import { BaseCommand } from "./base.js";
 
-export class HelloCommand extends Command {
+export class HelloCommand extends BaseCommand {
   static override paths = [["hello"]];
 
   static override usage = Command.Usage({
