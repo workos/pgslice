@@ -63,6 +63,11 @@ This new version will use the following node packages:
 - [`vitest`](https://github.com/vitest-dev/vitest) - Testing framework. We'll
   both unit and "end-to-end" tests in the TypeScript port.
 
+#### Testing
+
+Note that `vitest` and `npm test` will run in _watch_ mode by default. If you
+want a single run, pass the `run` subcommand (example: `npm test -- run`).
+
 ## Parity
 
 As mentioned above, we can use the original Ruby source code as a guide to
