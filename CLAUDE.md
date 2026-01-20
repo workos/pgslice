@@ -48,6 +48,10 @@ Some general guidelines for the TypeScript version:
   assertions, etc.
 - Only add code-comments when the code itself is not unclear or not
   self-describing.
+- We don't need to support older versions of Postgres; assume only version 13.x
+  or later.
+- We don't need to support "trigger-based partitioning". Only native
+  Postgres partitioning will be supported.
 
 This new version will use the following node packages:
 
