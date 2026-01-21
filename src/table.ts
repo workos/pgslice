@@ -57,13 +57,6 @@ export class Table {
   }
 
   /**
-   * Gets the trigger name for this table.
-   */
-  get triggerName(): string {
-    return `${this.name}_insert_trigger`;
-  }
-
-  /**
    * Creates a SQL identifier token for this table.
    */
   toSqlIdentifier(): IdentifierSqlToken {
