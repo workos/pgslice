@@ -71,19 +71,8 @@ export class Pgslice {
     tx: DatabaseTransactionConnection,
     options: PrepOptions,
   ): Promise<void> {
-    const { table: tableName, column, period, partition = true } = options;
-
-    const table = Table.parse(tableName);
+    const table = Table.parse(options.table);
     const intermediate = table.intermediate();
-
-    // Validation
-    if (!partition) {
-      if (column || period) {
-        throw new Error(
-          'Usage: "pgslice prep TABLE --no-partition" (column and period not allowed)',
-        );
-      }
-    }
 
     if (!(await table.exists(tx))) {
       throw new Error(`Table not found: ${table.toString()}`);
@@ -93,26 +82,22 @@ export class Pgslice {
       throw new Error(`Table already exists: ${intermediate.toString()}`);
     }
 
-    if (partition) {
-      if (!column || !period) {
-        throw new Error('Usage: "pgslice prep TABLE COLUMN PERIOD"');
-      }
-
+    if (options.partition) {
       const columns = await table.columns(tx);
-      if (!columns.includes(column)) {
-        throw new Error(`Column not found: ${column}`);
+      if (!columns.includes(options.column)) {
+        throw new Error(`Column not found: ${options.column}`);
       }
 
-      if (!isValidPeriod(period)) {
-        throw new Error(`Invalid period: ${period}`);
+      if (!isValidPeriod(options.period)) {
+        throw new Error(`Invalid period: ${options.period}`);
       }
 
       await this.#createPartitionedIntermediateTable(
         tx,
         table,
         intermediate,
-        column,
-        period,
+        options.column,
+        options.period,
       );
     } else {
       await this.#createUnpartitionedIntermediateTable(tx, table, intermediate);

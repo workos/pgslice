@@ -20,9 +20,15 @@ export const SQL_FORMAT: Record<Period, string> = {
 /**
  * Options for the `prep` command.
  */
-export interface PrepOptions {
+export type PrepOptions = {
   table: string;
-  column?: string;
-  period?: Period;
-  partition?: boolean;
-}
+} & (
+  | {
+      partition: false;
+    }
+  | {
+      partition?: true;
+      column: string;
+      period: Period;
+    }
+);

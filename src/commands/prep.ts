@@ -40,11 +40,28 @@ export class PrepCommand extends BaseCommand {
   });
 
   override async perform(tx: DatabaseTransactionConnection): Promise<void> {
-    await this.context.pgslice.prep(tx, {
-      table: this.table,
-      column: this.column,
-      period: this.period as Period | undefined,
-      partition: this.partition,
-    });
+    if (!this.partition) {
+      if (this.column || this.period) {
+        throw new Error(
+          'Usage: "pgslice prep TABLE --no-partition" (column and period not allowed)',
+        );
+      }
+
+      await this.context.pgslice.prep(tx, {
+        table: this.table,
+        partition: this.partition,
+      });
+    } else {
+      if (!this.column || !this.period) {
+        throw new Error('Usage: "pgslice prep TABLE COLUMN PERIOD"');
+      }
+
+      await this.context.pgslice.prep(tx, {
+        table: this.table,
+        column: this.column,
+        period: this.period as Period,
+        partition: this.partition,
+      });
+    }
   }
 }
