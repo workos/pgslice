@@ -1,1 +1,1 @@
-export { test } from "./db.js";
+export * from "./command.js";

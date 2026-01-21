@@ -1,4 +1,9 @@
-import { createPool, type DatabasePool } from "slonik";
+import {
+  CommonQueryMethods,
+  createPool,
+  DatabaseTransactionConnection,
+  type DatabasePool,
+} from "slonik";
 
 interface PgsliceOptions {
   dryRun?: boolean;
@@ -7,29 +12,28 @@ interface PgsliceOptions {
 export class Pgslice {
   #dryRun: boolean;
 
-  private constructor(
-    readonly databaseUrl: URL,
+  constructor(
+    connection: DatabasePool | CommonQueryMethods,
     options: PgsliceOptions,
   ) {
     this.#dryRun = options.dryRun ?? false;
+    this.#connection = connection;
   }
 
   static async connect(
     databaseUrl: URL,
-    options: PgsliceOptions,
+    options: PgsliceOptions = {},
   ): Promise<Pgslice> {
-    const instance = new Pgslice(databaseUrl, options);
-    await instance.initialize();
+    const connection = await createPool(databaseUrl.toString());
+    const instance = new Pgslice(connection, options);
     return instance;
   }
 
-  private async initialize(): Promise<void> {
-    this.#connection = await createPool(this.databaseUrl.toString());
-  }
+  #connection: DatabasePool | CommonQueryMethods | null = null;
 
-  #connection: DatabasePool | null = null;
-
-  get connection(): DatabasePool {
+  async start<T>(
+    handler: (transaction: DatabaseTransactionConnection) => Promise<T>,
+  ): Promise<T> {
     if (!this.#connection) {
       throw new Error("Not connected to the database");
     }
@@ -38,12 +42,14 @@ export class Pgslice {
       throw new Error("Dry run not yet supported.");
     }
 
-    return this.#connection;
+    return this.#connection.transaction(handler);
   }
 
   async close(): Promise<void> {
     if (this.#connection) {
-      await this.#connection.end();
+      if ("end" in this.#connection) {
+        await this.#connection.end();
+      }
       this.#connection = null;
     }
   }
