@@ -9,7 +9,7 @@ import { z } from "zod";
 
 import type { Period, PrepOptions } from "./types.js";
 import { SQL_FORMAT } from "./types.js";
-import { Table, sqlIdent, getServerVersionNum } from "./table.js";
+import { Table, getServerVersionNum } from "./table.js";
 
 interface PgsliceOptions {
   dryRun?: boolean;
@@ -134,7 +134,7 @@ export class Pgslice {
     // Create partitioned table using the appropriate INCLUDING clauses
     const intermediateIdent = intermediate.toSqlIdentifier();
     const tableIdent = table.toSqlIdentifier();
-    const columnIdent = sqlIdent(column);
+    const columnIdent = sql.identifier([column]);
 
     // For Postgres 14+, include COMPRESSION
     if (serverVersionNum >= 140000) {

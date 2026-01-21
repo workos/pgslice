@@ -5,13 +5,6 @@ import type { Cast } from "./types.js";
 const DEFAULT_SCHEMA = "public";
 
 /**
- * Creates a SQL identifier token for a single identifier (column name, etc.).
- */
-export function sqlIdent(name: string): IdentifierSqlToken {
-  return sql.identifier([name]);
-}
-
-/**
  * Gets the server version number.
  */
 export async function getServerVersionNum(
