@@ -1,7 +1,8 @@
 import { Command, Option } from "clipanion";
 import { DatabaseTransactionConnection } from "slonik";
+import * as t from "typanion";
 
-import type { Period } from "../types.js";
+import { PERIODS } from "../types.js";
 import { BaseCommand } from "./base.js";
 
 export class PrepCommand extends BaseCommand {
@@ -34,7 +35,11 @@ export class PrepCommand extends BaseCommand {
 
   table = Option.String({ required: true, name: "table" });
   column = Option.String({ required: false, name: "column" });
-  period = Option.String({ required: false, name: "period" });
+  period = Option.String({
+    required: false,
+    name: "period",
+    validator: t.isEnum(PERIODS),
+  });
   partition = Option.Boolean("--partition", true, {
     description: "Create a partitioned table (default: true)",
   });
@@ -59,7 +64,7 @@ export class PrepCommand extends BaseCommand {
       await this.context.pgslice.prep(tx, {
         table: this.table,
         column: this.column,
-        period: this.period as Period,
+        period: this.period,
         partition: this.partition,
       });
     }

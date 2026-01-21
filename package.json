@@ -23,7 +23,8 @@
   },
   "dependencies": {
     "clipanion": "^4.0.0-rc.4",
-    "slonik": "^46.0.0"
+    "slonik": "^46.0.0",
+    "typanion": "^3.14.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.7",

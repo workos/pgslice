@@ -1,7 +1,12 @@
 /**
  * Valid partition periods for partitioned tables.
  */
-export type Period = "day" | "month" | "year";
+export const PERIODS = ["day", "month", "year"] as const;
+
+/**
+ * A time period to partition a table by.
+ */
+export type Period = (typeof PERIODS)[number];
 
 /**
  * Valid cast types for partition columns.
