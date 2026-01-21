@@ -5,6 +5,7 @@ import {
   sql,
   type DatabasePool,
 } from "slonik";
+import { z } from "zod";
 
 import type { Period, PrepOptions } from "./types.js";
 import { SQL_FORMAT } from "./types.js";
@@ -131,7 +132,6 @@ export class Pgslice {
     const serverVersionNum = await getServerVersionNum(tx);
 
     // Create partitioned table using the appropriate INCLUDING clauses
-    // We need to use sql.unsafe for DDL but with sql.identifier for user-provided values
     const intermediateIdent = intermediate.toSqlIdentifier();
     const tableIdent = table.toSqlIdentifier();
     const columnIdent = sqlIdent(column);
@@ -139,11 +139,15 @@ export class Pgslice {
     // For Postgres 14+, include COMPRESSION
     if (serverVersionNum >= 140000) {
       await tx.query(
-        sql.unsafe`CREATE TABLE ${intermediateIdent} (LIKE ${tableIdent} INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING STORAGE INCLUDING COMMENTS INCLUDING STATISTICS INCLUDING GENERATED INCLUDING COMPRESSION) PARTITION BY RANGE (${columnIdent})`,
+        sql.type(z.object({}))`
+          CREATE TABLE ${intermediateIdent} (LIKE ${tableIdent} INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING STORAGE INCLUDING COMMENTS INCLUDING STATISTICS INCLUDING GENERATED INCLUDING COMPRESSION) PARTITION BY RANGE (${columnIdent})
+        `,
       );
     } else {
       await tx.query(
-        sql.unsafe`CREATE TABLE ${intermediateIdent} (LIKE ${tableIdent} INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING STORAGE INCLUDING COMMENTS INCLUDING STATISTICS INCLUDING GENERATED) PARTITION BY RANGE (${columnIdent})`,
+        sql.type(z.object({}))`
+          CREATE TABLE ${intermediateIdent} (LIKE ${tableIdent} INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING STORAGE INCLUDING COMMENTS INCLUDING STATISTICS INCLUDING GENERATED) PARTITION BY RANGE (${columnIdent})
+        `,
       );
     }
 
@@ -173,7 +177,9 @@ export class Pgslice {
     const cast = await table.columnCast(tx, column);
     const comment = `column:${column},period:${period},cast:${cast},version:3`;
     await tx.query(
-      sql.unsafe`COMMENT ON TABLE ${intermediateIdent} IS ${sql.literalValue(comment)}`,
+      sql.type(z.object({}))`
+        COMMENT ON TABLE ${intermediateIdent} IS ${sql.literalValue(comment)}
+      `,
     );
   }
 
@@ -187,7 +193,9 @@ export class Pgslice {
 
     // Create table with all properties
     await tx.query(
-      sql.unsafe`CREATE TABLE ${intermediateIdent} (LIKE ${tableIdent} INCLUDING ALL)`,
+      sql.type(z.object({}))`
+        CREATE TABLE ${intermediateIdent} (LIKE ${tableIdent} INCLUDING ALL)
+      `,
     );
 
     // Copy foreign keys (not included with LIKE ... INCLUDING ALL)
@@ -210,14 +218,16 @@ function isValidPeriod(period: string): period is Period {
 async function ensureDDLExecutor(
   tx: DatabaseTransactionConnection,
 ): Promise<void> {
-  await tx.query(sql.unsafe`
-    CREATE OR REPLACE FUNCTION pg_temp.pgslice_execute_ddl(ddl_statement text)
-    RETURNS void AS $$
-    BEGIN
-      EXECUTE ddl_statement;
-    END;
-    $$ LANGUAGE plpgsql
-  `);
+  await tx.query(
+    sql.type(z.object({}))`
+      CREATE OR REPLACE FUNCTION pg_temp.pgslice_execute_ddl(ddl_statement text)
+      RETURNS void AS $$
+      BEGIN
+        EXECUTE ddl_statement;
+      END;
+      $$ LANGUAGE plpgsql
+    `,
+  );
 }
 
 /**
@@ -235,6 +245,6 @@ async function executeDynamicDDL(
   // Call the function with the DDL statement as a parameter
   // The function will execute the DDL using EXECUTE
   await tx.query(
-    sql.unsafe`SELECT pg_temp.pgslice_execute_ddl(${ddlStatement})`,
+    sql.type(z.object({}))`SELECT pg_temp.pgslice_execute_ddl(${ddlStatement})`,
   );
 }
