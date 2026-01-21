@@ -40,11 +40,16 @@ export class PrepCommand extends BaseCommand {
   });
 
   override async perform(tx: DatabaseTransactionConnection): Promise<void> {
-    await this.context.pgslice.prep(tx, {
-      table: this.table,
-      column: this.column,
-      period: this.period as Period | undefined,
-      partition: this.partition,
-    });
+    try {
+      await this.context.pgslice.prep(tx, {
+        table: this.table,
+        column: this.column,
+        period: this.period as Period | undefined,
+        partition: this.partition,
+      });
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
   }
 }

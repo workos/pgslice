@@ -19,15 +19,6 @@ export async function getServerVersionNum(
 }
 
 /**
- * Quotes an identifier for safe use in SQL statements.
- */
-function quoteIdent(name: string): string {
-  // Escape any double quotes by doubling them
-  const escaped = name.replace(/"/g, '""');
-  return `"${escaped}"`;
-}
-
-/**
  * Represents a database table with schema and name.
  */
 export class Table {
@@ -82,8 +73,8 @@ export class Table {
   /**
    * Returns the quoted string representation of this table for use in SQL.
    */
-  toQuotedString(): string {
-    return `${quoteIdent(this.schema)}.${quoteIdent(this.name)}`;
+  toLiteralValue() {
+    return sql.literalValue(this.toString());
   }
 
   /**
@@ -148,11 +139,10 @@ export class Table {
    * Gets index definitions for this table (excluding primary key).
    */
   async indexDefs(tx: DatabaseTransactionConnection): Promise<string[]> {
-    const quotedTable = this.toQuotedString();
     const result = await tx.any(
       sql.type(z.object({ pg_get_indexdef: z.string() }))`
         SELECT pg_get_indexdef(indexrelid) FROM pg_index
-        WHERE indrelid = ${quotedTable}::regclass AND indisprimary = 'f'
+        WHERE indrelid = ${this.toLiteralValue()}::regclass AND indisprimary = 'f'
       `,
     );
     return result.map((row) => row.pg_get_indexdef);
@@ -162,11 +152,10 @@ export class Table {
    * Gets foreign key constraint definitions for this table.
    */
   async foreignKeys(tx: DatabaseTransactionConnection): Promise<string[]> {
-    const quotedTable = this.toQuotedString();
     const result = await tx.any(
       sql.type(z.object({ pg_get_constraintdef: z.string() }))`
         SELECT pg_get_constraintdef(oid) FROM pg_constraint
-        WHERE conrelid = ${quotedTable}::regclass AND contype = 'f'
+        WHERE conrelid = ${this.toLiteralValue()}::regclass AND contype = 'f'
       `,
     );
     return result.map((row) => row.pg_get_constraintdef);

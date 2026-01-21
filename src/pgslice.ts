@@ -156,19 +156,19 @@ export class Pgslice {
     for (const indexDef of indexDefs) {
       // Transform the index definition to point to the intermediate table
       const transformedIndexDef = indexDef
-        .replace(
-          / ON \S+ USING /,
-          ` ON ${intermediate.toQuotedString()} USING `,
-        )
+        .replace(/ ON \S+ USING /, ` ON ${intermediate.toString()} USING `)
         .replace(/ INDEX .+ ON /, " INDEX ON ");
-      await tx.query(rawSql(transformedIndexDef));
+      await tx.query(sql.type(z.object({}))`${rawSql(transformedIndexDef)}`);
     }
 
     // Copy foreign keys
     const foreignKeys = await table.foreignKeys(tx);
     for (const fkDef of foreignKeys) {
-      const fkSql = `ALTER TABLE ${intermediate.toQuotedString()} ADD ${fkDef}`;
-      await tx.query(rawSql(fkSql));
+      await tx.query(
+        sql.type(
+          z.object({}),
+        )`ALTER TABLE ${intermediate.toSqlIdentifier()} ADD ${rawSql(fkDef)}`,
+      );
     }
 
     // Add metadata comment
@@ -196,11 +196,16 @@ export class Pgslice {
       `,
     );
 
+    sql.typeAlias;
+
     // Copy foreign keys (not included with LIKE ... INCLUDING ALL)
     const foreignKeys = await table.foreignKeys(tx);
     for (const fkDef of foreignKeys) {
-      const fkSql = `ALTER TABLE ${intermediate.toQuotedString()} ADD ${fkDef}`;
-      await tx.query(rawSql(fkSql));
+      await tx.query(
+        sql.type(
+          z.object({}),
+        )`ALTER TABLE ${intermediate.toSqlIdentifier()} ADD ${rawSql(fkDef)}`,
+      );
     }
   }
 }
@@ -212,5 +217,5 @@ function isValidPeriod(period: string): period is Period {
 function rawSql(query: string) {
   const raw = Object.freeze([query]);
   const strings = Object.assign([query], { raw });
-  return sql.unsafe(strings);
+  return sql.fragment(strings);
 }
