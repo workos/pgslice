@@ -203,8 +203,6 @@ export class Pgslice {
       `,
     );
 
-    sql.typeAlias;
-
     // Copy foreign keys (not included with LIKE ... INCLUDING ALL)
     const foreignKeys = await table.foreignKeys(tx);
     for (const fkDef of foreignKeys) {
