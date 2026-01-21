@@ -57,6 +57,8 @@ This new version will use the following node packages:
 
 - [`slonik`](https://github.com/gajus/slonik) - Postgres client that will handle
   connecting to the database and running statements.
+  - Avoid using `sq.unsafe`. According to the `slonik` docs, it must not be used
+    in production code; let's follow their advice.
 - [`clipanion`](https://github.com/arcanis/clipanion) - CLI parsing library with
   similar semantics to `thor` from the Ruby version, but individual commands
   are represented by classes.
