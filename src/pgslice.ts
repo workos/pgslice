@@ -156,8 +156,7 @@ export class Pgslice {
     );
 
     // Copy indexes
-    const indexDefs = await table.indexDefs(tx);
-    for (const indexDef of indexDefs) {
+    for (const indexDef of await table.indexDefs(tx)) {
       // Transform the index definition to point to the intermediate table
       const transformedIndexDef = indexDef
         .replace(/ ON \S+ USING /, ` ON ${intermediate.toString()} USING `)
@@ -183,13 +182,10 @@ export class Pgslice {
     table: Table,
     intermediate: Table,
   ): Promise<void> {
-    const intermediateIdent = intermediate.toSqlIdentifier();
-    const tableIdent = table.toSqlIdentifier();
-
     // Create table with all properties
     await tx.query(
       sql.type(z.object({}))`
-        CREATE TABLE ${intermediateIdent} (LIKE ${tableIdent} INCLUDING ALL)
+        CREATE TABLE ${intermediate.toSqlIdentifier()} (LIKE ${table.toSqlIdentifier()} INCLUDING ALL)
       `,
     );
 
