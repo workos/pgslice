@@ -11,11 +11,11 @@ export type Cast = "date" | "timestamptz";
 /**
  * SQL formats used for partition naming by period.
  */
-export const SQL_FORMAT: Record<Period, string> = {
+export const SQL_FORMAT = {
   day: "YYYYMMDD",
   month: "YYYYMM",
   year: "YYYY",
-};
+} as const;
 
 /**
  * Options for the `prep` command.
