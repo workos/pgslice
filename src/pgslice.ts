@@ -106,16 +106,13 @@ export class Pgslice {
       if (!isValidPeriod(period)) {
         throw new Error(`Invalid period: ${period}`);
       }
-    }
 
-    // Build and execute queries
-    if (partition) {
       await this.#createPartitionedIntermediateTable(
         tx,
         table,
         intermediate,
-        column as string,
-        period as Period,
+        column,
+        period,
       );
     } else {
       await this.#createUnpartitionedIntermediateTable(tx, table, intermediate);
