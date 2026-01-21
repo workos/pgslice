@@ -166,14 +166,7 @@ export class Pgslice {
     }
 
     // Copy foreign keys
-    const foreignKeys = await table.foreignKeys(tx);
-    for (const fkDef of foreignKeys) {
-      await tx.query(
-        sql.type(
-          z.object({}),
-        )`ALTER TABLE ${intermediate.toSqlIdentifier()} ADD ${rawSql(fkDef)}`,
-      );
-    }
+    await this.#copyForeignKeys(tx, table, intermediate);
 
     // Add metadata comment
     const cast = await table.columnCast(tx, column);
@@ -201,12 +194,19 @@ export class Pgslice {
     );
 
     // Copy foreign keys (not included with LIKE ... INCLUDING ALL)
-    const foreignKeys = await table.foreignKeys(tx);
-    for (const fkDef of foreignKeys) {
+    await this.#copyForeignKeys(tx, table, intermediate);
+  }
+
+  async #copyForeignKeys(
+    tx: DatabaseTransactionConnection,
+    source: Table,
+    target: Table,
+  ): Promise<void> {
+    for (const fkDef of await source.foreignKeys(tx)) {
       await tx.query(
         sql.type(
           z.object({}),
-        )`ALTER TABLE ${intermediate.toSqlIdentifier()} ADD ${rawSql(fkDef)}`,
+        )`ALTER TABLE ${target.toSqlIdentifier()} ADD ${rawSql(fkDef)}`,
       );
     }
   }
