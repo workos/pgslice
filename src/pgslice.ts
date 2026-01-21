@@ -151,9 +151,7 @@ export class Pgslice {
       );
     }
 
-    // Copy indexes by executing each one through a dynamic SQL executor function
-    // We create a temporary function to execute the DDL, since slonik doesn't support
-    // executing arbitrary SQL strings directly
+    // Copy indexes
     const indexDefs = await table.indexDefs(tx);
     for (const indexDef of indexDefs) {
       // Transform the index definition to point to the intermediate table
@@ -163,14 +161,14 @@ export class Pgslice {
           ` ON ${intermediate.toQuotedString()} USING `,
         )
         .replace(/ INDEX .+ ON /, " INDEX ON ");
-      await executeDynamicDDL(tx, transformedIndexDef);
+      await tx.query(rawSql(transformedIndexDef));
     }
 
     // Copy foreign keys
     const foreignKeys = await table.foreignKeys(tx);
     for (const fkDef of foreignKeys) {
       const fkSql = `ALTER TABLE ${intermediate.toQuotedString()} ADD ${fkDef}`;
-      await executeDynamicDDL(tx, fkSql);
+      await tx.query(rawSql(fkSql));
     }
 
     // Add metadata comment
@@ -202,7 +200,7 @@ export class Pgslice {
     const foreignKeys = await table.foreignKeys(tx);
     for (const fkDef of foreignKeys) {
       const fkSql = `ALTER TABLE ${intermediate.toQuotedString()} ADD ${fkDef}`;
-      await executeDynamicDDL(tx, fkSql);
+      await tx.query(rawSql(fkSql));
     }
   }
 }
@@ -211,40 +209,8 @@ function isValidPeriod(period: string): period is Period {
   return period in SQL_FORMAT;
 }
 
-/**
- * Ensures the pgslice_execute_ddl helper function exists.
- * This function is used to execute dynamic DDL statements through slonik.
- */
-async function ensureDDLExecutor(
-  tx: DatabaseTransactionConnection,
-): Promise<void> {
-  await tx.query(
-    sql.type(z.object({}))`
-      CREATE OR REPLACE FUNCTION pg_temp.pgslice_execute_ddl(ddl_statement text)
-      RETURNS void AS $$
-      BEGIN
-        EXECUTE ddl_statement;
-      END;
-      $$ LANGUAGE plpgsql
-    `,
-  );
-}
-
-/**
- * Executes dynamic DDL using a helper PL/pgSQL function.
- * This is a workaround for slonik's security model which doesn't allow
- * executing arbitrary SQL strings directly.
- */
-async function executeDynamicDDL(
-  tx: DatabaseTransactionConnection,
-  ddlStatement: string,
-): Promise<void> {
-  // Ensure our DDL executor function exists
-  await ensureDDLExecutor(tx);
-
-  // Call the function with the DDL statement as a parameter
-  // The function will execute the DDL using EXECUTE
-  await tx.query(
-    sql.type(z.object({}))`SELECT pg_temp.pgslice_execute_ddl(${ddlStatement})`,
-  );
+function rawSql(query: string) {
+  const raw = Object.freeze([query]);
+  const strings = Object.assign([query], { raw });
+  return sql.unsafe(strings);
 }
