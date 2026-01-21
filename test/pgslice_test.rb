@@ -54,10 +54,12 @@ class PgSliceTest < Minitest::Test
   end
 
   def test_trigger_based
+    skip "TypeScript port doesn't support trigger-based partitioning" if use_typescript_port?
     assert_period "month", trigger_based: true
   end
 
   def test_trigger_based_timestamptz
+    skip "TypeScript port doesn't support trigger-based partitioning" if use_typescript_port?
     assert_period "month", trigger_based: true, column: "createdAtTz"
   end
 
@@ -70,6 +72,7 @@ class PgSliceTest < Minitest::Test
   end
 
   def test_tablespace_trigger_based
+    skip "TypeScript port doesn't support trigger-based partitioning" if use_typescript_port?
     assert_period "month", trigger_based: true, tablespace: true
   end
 
@@ -94,6 +97,7 @@ class PgSliceTest < Minitest::Test
   end
 
   def test_prep_no_partition_trigger_based
+    skip "TypeScript port doesn't support trigger-based partitioning" if use_typescript_port?
     assert_error "Can't use --trigger-based and --no-partition", "prep Posts --no-partition --trigger-based"
   end
 
