@@ -167,7 +167,9 @@ describe("PrepCommand", () => {
         SELECT obj_description('public.posts_intermediate'::regclass) AS comment
       `,
     );
-    expect(result.comment).toBe("column:created_at,period:month,cast:date,version:3");
+    expect(result.comment).toBe(
+      "column:created_at,period:month,cast:date,version:3",
+    );
   });
 
   test("handles schema-qualified table names", async ({
@@ -202,9 +204,7 @@ describe("PrepCommand", () => {
     expect(Number(result?.count)).toBe(1);
   });
 
-  test("returns error when table not found", async ({
-    commandContext,
-  }) => {
+  test("returns error when table not found", async ({ commandContext }) => {
     const command = new PrepCommand();
     command.context = commandContext;
     command.table = "nonexistent";
@@ -348,6 +348,8 @@ describe("PrepCommand", () => {
         SELECT obj_description('public.events_intermediate'::regclass) AS comment
       `,
     );
-    expect(result.comment).toBe("column:occurred_at,period:day,cast:timestamptz,version:3");
+    expect(result.comment).toBe(
+      "column:occurred_at,period:day,cast:timestamptz,version:3",
+    );
   });
 });

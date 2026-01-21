@@ -17,7 +17,10 @@ export class PrepCommand extends BaseCommand {
       This is useful when you want to use pgslice for data migration without partitioning.
     `,
     examples: [
-      ["Create a partitioned intermediate table", "$0 prep posts created_at month"],
+      [
+        "Create a partitioned intermediate table",
+        "$0 prep posts created_at month",
+      ],
       [
         "Create with explicit schema",
         "$0 prep myschema.posts created_at month",

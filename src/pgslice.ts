@@ -154,7 +154,10 @@ export class Pgslice {
     for (const indexDef of indexDefs) {
       // Transform the index definition to point to the intermediate table
       const transformedIndexDef = indexDef
-        .replace(/ ON \S+ USING /, ` ON ${intermediate.toQuotedString()} USING `)
+        .replace(
+          / ON \S+ USING /,
+          ` ON ${intermediate.toQuotedString()} USING `,
+        )
         .replace(/ INDEX .+ ON /, " INDEX ON ");
       await executeDynamicDDL(tx, transformedIndexDef);
     }
@@ -231,5 +234,7 @@ async function executeDynamicDDL(
 
   // Call the function with the DDL statement as a parameter
   // The function will execute the DDL using EXECUTE
-  await tx.query(sql.unsafe`SELECT pg_temp.pgslice_execute_ddl(${ddlStatement})`);
+  await tx.query(
+    sql.unsafe`SELECT pg_temp.pgslice_execute_ddl(${ddlStatement})`,
+  );
 }

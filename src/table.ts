@@ -1,8 +1,4 @@
-import {
-  DatabaseTransactionConnection,
-  sql,
-  IdentifierSqlToken,
-} from "slonik";
+import { DatabaseTransactionConnection, sql, IdentifierSqlToken } from "slonik";
 import { z } from "zod";
 import type { Cast } from "./types.js";
 
@@ -108,7 +104,9 @@ export class Table {
    * Checks if this table exists in the database.
    */
   async exists(tx: DatabaseTransactionConnection): Promise<boolean> {
-    const result = await tx.one(sql.type(z.object({ count: z.coerce.number() }))`
+    const result = await tx.one(sql.type(
+      z.object({ count: z.coerce.number() }),
+    )`
       SELECT COUNT(*) FROM pg_catalog.pg_tables
       WHERE schemaname = ${this.schema} AND tablename = ${this.name}
     `);
@@ -148,7 +146,9 @@ export class Table {
     if (!result) {
       throw new Error(`Column not found: ${column}`);
     }
-    return result.data_type === "timestamp with time zone" ? "timestamptz" : "date";
+    return result.data_type === "timestamp with time zone"
+      ? "timestamptz"
+      : "date";
   }
 
   /**
