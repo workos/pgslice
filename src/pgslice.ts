@@ -6,22 +6,9 @@ import {
   type DatabasePool,
 } from "slonik";
 
-import type { Period, PrepOptions, TableRef } from "./types.js";
+import type { Period, PrepOptions } from "./types.js";
 import { SQL_FORMAT } from "./types.js";
-import {
-  getColumnCast,
-  getColumns,
-  getForeignKeys,
-  getIndexDefs,
-  getServerVersionNum,
-  intermediateTable,
-  parseTableName,
-  quoteTable,
-  sqlIdent,
-  sqlTable,
-  tableExists,
-  tableToString,
-} from "./table.js";
+import { Table, sqlIdent, getServerVersionNum } from "./table.js";
 
 interface PgsliceOptions {
   dryRun?: boolean;
@@ -85,8 +72,8 @@ export class Pgslice {
   ): Promise<void> {
     const { table: tableName, column, period, partition = true } = options;
 
-    const table = parseTableName(tableName);
-    const intermediate = intermediateTable(table);
+    const table = Table.parse(tableName);
+    const intermediate = table.intermediate();
 
     // Validation
     if (!partition) {
@@ -97,12 +84,12 @@ export class Pgslice {
       }
     }
 
-    if (!(await tableExists(tx, table))) {
-      throw new Error(`Table not found: ${tableToString(table)}`);
+    if (!(await table.exists(tx))) {
+      throw new Error(`Table not found: ${table.toString()}`);
     }
 
-    if (await tableExists(tx, intermediate)) {
-      throw new Error(`Table already exists: ${tableToString(intermediate)}`);
+    if (await intermediate.exists(tx)) {
+      throw new Error(`Table already exists: ${intermediate.toString()}`);
     }
 
     if (partition) {
@@ -110,7 +97,7 @@ export class Pgslice {
         throw new Error('Usage: "pgslice prep TABLE COLUMN PERIOD"');
       }
 
-      const columns = await getColumns(tx, table);
+      const columns = await table.columns(tx);
       if (!columns.includes(column)) {
         throw new Error(`Column not found: ${column}`);
       }
@@ -136,8 +123,8 @@ export class Pgslice {
 
   async #createPartitionedIntermediateTable(
     tx: DatabaseTransactionConnection,
-    table: TableRef,
-    intermediate: TableRef,
+    table: Table,
+    intermediate: Table,
     column: string,
     period: Period,
   ): Promise<void> {
@@ -145,8 +132,8 @@ export class Pgslice {
 
     // Create partitioned table using the appropriate INCLUDING clauses
     // We need to use sql.unsafe for DDL but with sql.identifier for user-provided values
-    const intermediateIdent = sqlTable(intermediate);
-    const tableIdent = sqlTable(table);
+    const intermediateIdent = intermediate.toSqlIdentifier();
+    const tableIdent = table.toSqlIdentifier();
     const columnIdent = sqlIdent(column);
 
     // For Postgres 14+, include COMPRESSION
@@ -163,24 +150,24 @@ export class Pgslice {
     // Copy indexes by executing each one through a dynamic SQL executor function
     // We create a temporary function to execute the DDL, since slonik doesn't support
     // executing arbitrary SQL strings directly
-    const indexDefs = await getIndexDefs(tx, table);
+    const indexDefs = await table.indexDefs(tx);
     for (const indexDef of indexDefs) {
       // Transform the index definition to point to the intermediate table
       const transformedIndexDef = indexDef
-        .replace(/ ON \S+ USING /, ` ON ${quoteTable(intermediate)} USING `)
+        .replace(/ ON \S+ USING /, ` ON ${intermediate.toQuotedString()} USING `)
         .replace(/ INDEX .+ ON /, " INDEX ON ");
       await executeDynamicDDL(tx, transformedIndexDef);
     }
 
     // Copy foreign keys
-    const foreignKeys = await getForeignKeys(tx, table);
+    const foreignKeys = await table.foreignKeys(tx);
     for (const fkDef of foreignKeys) {
-      const fkSql = `ALTER TABLE ${quoteTable(intermediate)} ADD ${fkDef}`;
+      const fkSql = `ALTER TABLE ${intermediate.toQuotedString()} ADD ${fkDef}`;
       await executeDynamicDDL(tx, fkSql);
     }
 
     // Add metadata comment
-    const cast = await getColumnCast(tx, table, column);
+    const cast = await table.columnCast(tx, column);
     const comment = `column:${column},period:${period},cast:${cast},version:3`;
     await tx.query(
       sql.unsafe`COMMENT ON TABLE ${intermediateIdent} IS ${sql.literalValue(comment)}`,
@@ -189,11 +176,11 @@ export class Pgslice {
 
   async #createUnpartitionedIntermediateTable(
     tx: DatabaseTransactionConnection,
-    table: TableRef,
-    intermediate: TableRef,
+    table: Table,
+    intermediate: Table,
   ): Promise<void> {
-    const intermediateIdent = sqlTable(intermediate);
-    const tableIdent = sqlTable(table);
+    const intermediateIdent = intermediate.toSqlIdentifier();
+    const tableIdent = table.toSqlIdentifier();
 
     // Create table with all properties
     await tx.query(
@@ -201,9 +188,9 @@ export class Pgslice {
     );
 
     // Copy foreign keys (not included with LIKE ... INCLUDING ALL)
-    const foreignKeys = await getForeignKeys(tx, table);
+    const foreignKeys = await table.foreignKeys(tx);
     for (const fkDef of foreignKeys) {
-      const fkSql = `ALTER TABLE ${quoteTable(intermediate)} ADD ${fkDef}`;
+      const fkSql = `ALTER TABLE ${intermediate.toQuotedString()} ADD ${fkDef}`;
       await executeDynamicDDL(tx, fkSql);
     }
   }

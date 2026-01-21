@@ -1,12 +1,4 @@
 /**
- * Reference to a database table with schema and name.
- */
-export interface TableRef {
-  schema: string;
-  name: string;
-}
-
-/**
  * Valid partition periods for partitioned tables.
  */
 export type Period = "day" | "month" | "year";
