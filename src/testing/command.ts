@@ -22,7 +22,7 @@ function getTestDatabaseUrl(): string {
 export const commandTest = baseTest.extend<{
   pgslice: Pgslice;
   transaction: DatabaseTransactionConnection;
-  commandContext: Context & { stdout: PassThrough };
+  commandContext: Context & { stdout: PassThrough; stderr: PassThrough };
 }>({
   transaction: async ({}, use) => {
     const connection = await createPool(getTestDatabaseUrl().toString());
@@ -47,11 +47,12 @@ export const commandTest = baseTest.extend<{
 
   commandContext: async ({ pgslice }, use) => {
     const stdout = new PassThrough();
+    const stderr = new PassThrough();
 
     use({
       stdin: process.stdin,
       stdout,
-      stderr: process.stderr,
+      stderr,
       env: process.env,
       colorDepth: 1,
       pgslice,

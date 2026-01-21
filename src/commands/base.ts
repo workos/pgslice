@@ -25,19 +25,26 @@ export abstract class BaseCommand extends Command<Context> {
   }
 
   async execute(): Promise<number | void> {
-    this.context.pgslice ??= await Pgslice.connect(
-      new URL(this.getDatabaseUrl()),
-      {
-        dryRun: this.dryRun,
-      },
-    );
-
     try {
-      return await this.context.pgslice.start((transaction) =>
+      this.context.pgslice ??= await Pgslice.connect(
+        new URL(this.getDatabaseUrl()),
+        {
+          dryRun: this.dryRun,
+        },
+      );
+
+      await this.context.pgslice.start((transaction) =>
         this.perform(transaction),
       );
+    } catch (error) {
+      if (error instanceof Error) {
+        this.context.stderr.write(`${error.message}\n`);
+      } else {
+        this.context.stderr.write(`${error}\n`);
+      }
+      return 1;
     } finally {
-      await this.context.pgslice.close();
+      await this.context.pgslice?.close();
     }
   }
 
