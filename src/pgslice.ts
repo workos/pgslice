@@ -136,20 +136,27 @@ export class Pgslice {
     const tableIdent = table.toSqlIdentifier();
     const columnIdent = sql.identifier([column]);
 
+    const includings = [
+      sql.fragment`COMMENTS`,
+      sql.fragment`CONSTRAINTS`,
+      sql.fragment`DEFAULTS`,
+      sql.fragment`STORAGE`,
+      sql.fragment`STATISTICS`,
+      sql.fragment`GENERATED`,
+    ];
+
     // For Postgres 14+, include COMPRESSION
     if (serverVersionNum >= 140000) {
-      await tx.query(
-        sql.type(z.object({}))`
-          CREATE TABLE ${intermediateIdent} (LIKE ${tableIdent} INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING STORAGE INCLUDING COMMENTS INCLUDING STATISTICS INCLUDING GENERATED INCLUDING COMPRESSION) PARTITION BY RANGE (${columnIdent})
-        `,
-      );
-    } else {
-      await tx.query(
-        sql.type(z.object({}))`
-          CREATE TABLE ${intermediateIdent} (LIKE ${tableIdent} INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING STORAGE INCLUDING COMMENTS INCLUDING STATISTICS INCLUDING GENERATED) PARTITION BY RANGE (${columnIdent})
-        `,
-      );
+      includings.push(sql.fragment`COMPRESSION`);
     }
+
+    await tx.query(
+      sql.type(z.object({}))`
+        CREATE TABLE ${intermediateIdent} (LIKE ${tableIdent}
+          INCLUDING ${sql.join(includings, sql.fragment` INCLUDING `)}
+        ) PARTITION BY RANGE (${columnIdent})
+      `,
+    );
 
     // Copy indexes
     const indexDefs = await table.indexDefs(tx);
