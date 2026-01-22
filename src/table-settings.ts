@@ -5,15 +5,11 @@ import { PERIODS } from "./types.js";
  * Settings stored in a partitioned table's comment.
  */
 export class TableSettings {
-  readonly column: string;
-  readonly period: Period;
-  readonly cast: Cast;
-
-  constructor(column: string, period: Period, cast: Cast) {
-    this.column = column;
-    this.period = period;
-    this.cast = cast;
-  }
+  constructor(
+    readonly column: string,
+    readonly period: Period,
+    readonly cast: Cast,
+  ) {}
 
   /**
    * Parses table settings from a comment string.
