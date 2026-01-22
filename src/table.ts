@@ -1,6 +1,7 @@
 import { DatabaseTransactionConnection, sql, IdentifierSqlToken } from "slonik";
 import { z } from "zod";
-import type { Cast } from "./types.js";
+import type { Cast, Period, TableSettings } from "./types.js";
+import { PERIODS } from "./types.js";
 
 const DEFAULT_SCHEMA = "public";
 
@@ -64,10 +65,11 @@ export class Table {
   }
 
   /**
-   * Returns the quoted string representation of this table for use in SQL.
+   * Returns a quoted literal value for use with ::regclass casting.
+   * The schema and table names are double-quoted to preserve case sensitivity.
    */
-  toLiteralValue() {
-    return sql.literalValue(this.toString());
+  toRegclassLiteral() {
+    return sql.literalValue(`"${this.schema}"."${this.name}"`);
   }
 
   /**
@@ -75,6 +77,14 @@ export class Table {
    */
   toString(): string {
     return `${this.schema}.${this.name}`;
+  }
+
+  /**
+   * Returns a properly quoted string representation of this table.
+   * Both schema and name are double-quoted to preserve case.
+   */
+  toQuotedString(): string {
+    return `"${this.schema}"."${this.name}"`;
   }
 
   /**
@@ -135,7 +145,7 @@ export class Table {
     const result = await tx.any(
       sql.type(z.object({ pg_get_indexdef: z.string() }))`
         SELECT pg_get_indexdef(indexrelid) FROM pg_index
-        WHERE indrelid = ${this.toLiteralValue()}::regclass AND indisprimary = 'f'
+        WHERE indrelid = ${this.toRegclassLiteral()}::regclass AND indisprimary = 'f'
       `,
     );
     return result.map((row) => row.pg_get_indexdef);
@@ -148,9 +158,126 @@ export class Table {
     const result = await tx.any(
       sql.type(z.object({ pg_get_constraintdef: z.string() }))`
         SELECT pg_get_constraintdef(oid) FROM pg_constraint
-        WHERE conrelid = ${this.toLiteralValue()}::regclass AND contype = 'f'
+        WHERE conrelid = ${this.toRegclassLiteral()}::regclass AND contype = 'f'
       `,
     );
     return result.map((row) => row.pg_get_constraintdef);
   }
+
+  /**
+   * Creates a partition table derived from this table with the given suffix.
+   */
+  partition(suffix: string): Table {
+    return new Table(this.schema, `${this.name}_${suffix}`);
+  }
+
+  /**
+   * Gets the primary key column names for this table in order.
+   */
+  async primaryKey(tx: DatabaseTransactionConnection): Promise<string[]> {
+    const result = await tx.any(
+      sql.type(
+        z.object({
+          attname: z.string(),
+          attnum: z.coerce.string(),
+          indkey: z.string(),
+        }),
+      )`
+        SELECT
+          pg_attribute.attname,
+          pg_attribute.attnum,
+          pg_index.indkey
+        FROM
+          pg_index, pg_class, pg_attribute, pg_namespace
+        WHERE
+          nspname = ${this.schema} AND
+          relname = ${this.name} AND
+          indrelid = pg_class.oid AND
+          pg_class.relnamespace = pg_namespace.oid AND
+          pg_attribute.attrelid = pg_class.oid AND
+          pg_attribute.attnum = any(pg_index.indkey) AND
+          indisprimary
+      `,
+    );
+
+    return [...result]
+      .sort((a, b) => {
+        const keys = a.indkey.split(" ");
+        return keys.indexOf(a.attnum) - keys.indexOf(b.attnum);
+      })
+      .map((r) => r.attname);
+  }
+
+  /**
+   * Gets all child partitions of this table.
+   */
+  async partitions(tx: DatabaseTransactionConnection): Promise<Table[]> {
+    const result = await tx.any(
+      sql.type(z.object({ schema: z.string(), name: z.string() }))`
+        SELECT
+          nmsp_child.nspname AS schema,
+          child.relname AS name
+        FROM pg_inherits
+          JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
+          JOIN pg_class child ON pg_inherits.inhrelid = child.oid
+          JOIN pg_namespace nmsp_parent ON nmsp_parent.oid = parent.relnamespace
+          JOIN pg_namespace nmsp_child ON nmsp_child.oid = child.relnamespace
+        WHERE
+          nmsp_parent.nspname = ${this.schema} AND
+          parent.relname = ${this.name}
+        ORDER BY child.relname ASC
+      `,
+    );
+
+    return result.map((r) => new Table(r.schema, r.name));
+  }
+
+  /**
+   * Fetches the partition settings from this table's comment.
+   */
+  async fetchSettings(
+    tx: DatabaseTransactionConnection,
+  ): Promise<TableSettings | null> {
+    const result = await tx.maybeOne(
+      sql.type(z.object({ comment: z.string().nullable() }))`
+        SELECT obj_description(${this.toRegclassLiteral()}::regclass) AS comment
+      `,
+    );
+
+    if (!result?.comment) {
+      return null;
+    }
+
+    return parseSettingsComment(result.comment);
+  }
+}
+
+function parseSettingsComment(comment: string): TableSettings | null {
+  const parts = comment.split(",");
+  const settings: Partial<TableSettings> = {};
+
+  for (const part of parts) {
+    const [key, value] = part.split(":");
+    if (key === "column") {
+      settings.column = value;
+    } else if (key === "period" && isValidPeriod(value)) {
+      settings.period = value;
+    } else if (key === "cast" && isValidCast(value)) {
+      settings.cast = value;
+    }
+  }
+
+  if (settings.column && settings.period && settings.cast) {
+    return settings as TableSettings;
+  }
+
+  return null;
+}
+
+function isValidPeriod(value: string): value is Period {
+  return PERIODS.includes(value as Period);
+}
+
+function isValidCast(value: string): value is Cast {
+  return value === "date" || value === "timestamptz";
 }

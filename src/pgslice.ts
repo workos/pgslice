@@ -7,9 +7,10 @@ import {
 } from "slonik";
 import { z } from "zod";
 
-import type { Period, PrepOptions } from "./types.js";
+import type { AddPartitionsOptions, Period, PrepOptions } from "./types.js";
 import { SQL_FORMAT } from "./types.js";
 import { Table, getServerVersionNum } from "./table.js";
+import { DateRanges } from "./date-ranges.js";
 
 interface PgsliceOptions {
   dryRun?: boolean;
@@ -144,7 +145,7 @@ export class Pgslice {
     for (const indexDef of await table.indexDefs(tx)) {
       // Transform the index definition to point to the intermediate table
       const transformedIndexDef = indexDef
-        .replace(/ ON \S+ USING /, ` ON ${intermediate.toString()} USING `)
+        .replace(/ ON \S+ USING /, ` ON ${intermediate.toQuotedString()} USING `)
         .replace(/ INDEX .+ ON /, " INDEX ON ");
       await tx.query(sql.type(z.object({}))`${rawSql(transformedIndexDef)}`);
     }
@@ -191,6 +192,95 @@ export class Pgslice {
       );
     }
   }
+
+  /**
+   * Adds partitions to a partitioned table.
+   */
+  async addPartitions(
+    tx: DatabaseTransactionConnection,
+    options: AddPartitionsOptions,
+  ): Promise<void> {
+    const originalTable = Table.parse(options.table);
+    const targetTable = options.intermediate
+      ? originalTable.intermediate()
+      : originalTable;
+
+    if (!(await targetTable.exists(tx))) {
+      throw new Error(`Table not found: ${targetTable.toString()}`);
+    }
+
+    const settings = await targetTable.fetchSettings(tx);
+    if (!settings) {
+      let message = `No settings found: ${targetTable.toString()}`;
+      if (!options.intermediate) {
+        message += "\nDid you mean to use --intermediate?";
+      }
+      throw new Error(message);
+    }
+
+    const past = options.past ?? 0;
+    const future = options.future ?? 0;
+
+    // Determine which table to get the primary key from.
+    // For intermediate tables, use the original table.
+    // For swapped tables, use the last existing partition (if any) or the original.
+    let schemaTable: Table;
+    if (options.intermediate) {
+      schemaTable = originalTable;
+    } else {
+      const existingPartitions = await targetTable.partitions(tx);
+      schemaTable =
+        existingPartitions.length > 0
+          ? existingPartitions[existingPartitions.length - 1]
+          : originalTable;
+    }
+
+    const primaryKeyColumns = await schemaTable.primaryKey(tx);
+
+    const dateRanges = new DateRanges({
+      period: settings.period,
+      past,
+      future,
+    });
+
+    for (const range of dateRanges) {
+      const partitionTable = originalTable.partition(range.suffix);
+
+      if (await partitionTable.exists(tx)) {
+        continue;
+      }
+
+      const startDate = formatDateForSql(range.start, settings.cast);
+      const endDate = formatDateForSql(range.end, settings.cast);
+
+      // Build the CREATE TABLE statement
+      let createSql = sql.fragment`
+        CREATE TABLE ${partitionTable.toSqlIdentifier()}
+        PARTITION OF ${targetTable.toSqlIdentifier()}
+        FOR VALUES FROM (${startDate}) TO (${endDate})
+      `;
+
+      if (options.tablespace) {
+        createSql = sql.fragment`${createSql} TABLESPACE ${sql.identifier([options.tablespace])}`;
+      }
+
+      await tx.query(sql.type(z.object({}))`${createSql}`);
+
+      // Add primary key if the schema table has one
+      if (primaryKeyColumns.length > 0) {
+        const pkColumns = sql.join(
+          primaryKeyColumns.map((col) => sql.identifier([col])),
+          sql.fragment`, `,
+        );
+        await tx.query(
+          sql.type(z.object({}))`
+            ALTER TABLE ${partitionTable.toSqlIdentifier()}
+            ADD PRIMARY KEY (${pkColumns})
+          `,
+        );
+      }
+    }
+  }
 }
 
 function isValidPeriod(period: string): period is Period {
@@ -201,4 +291,15 @@ function rawSql(query: string) {
   const raw = Object.freeze([query]);
   const strings = Object.assign([query], { raw });
   return sql.fragment(strings);
+}
+
+function formatDateForSql(date: Date, cast: "date" | "timestamptz") {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+
+  if (cast === "timestamptz") {
+    return sql.literalValue(`${year}-${month}-${day} 00:00:00 UTC`);
+  }
+  return sql.literalValue(`${year}-${month}-${day}`);
 }
