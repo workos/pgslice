@@ -4,6 +4,13 @@
 export const PERIODS = ["day", "month", "year"] as const;
 
 /**
+ * Type guard to check if a string is a valid Period.
+ */
+export function isPeriod(value: string): value is Period {
+  return PERIODS.includes(value as Period);
+}
+
+/**
  * A time period to partition a table by.
  */
 export type Period = (typeof PERIODS)[number];
@@ -20,7 +27,7 @@ export const SQL_FORMAT = {
   day: "YYYYMMDD",
   month: "YYYYMM",
   year: "YYYY",
-} as const;
+} as const satisfies Record<Period, string>;
 
 /**
  * Options for the `prep` command.

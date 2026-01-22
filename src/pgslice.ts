@@ -8,7 +8,7 @@ import {
 import { z } from "zod";
 
 import type { AddPartitionsOptions, Period, PrepOptions } from "./types.js";
-import { SQL_FORMAT } from "./types.js";
+import { isPeriod } from "./types.js";
 import { Table, getServerVersionNum } from "./table.js";
 import { DateRanges } from "./date-ranges.js";
 
@@ -89,7 +89,7 @@ export class Pgslice {
         throw new Error(`Column not found: ${options.column}`);
       }
 
-      if (!isValidPeriod(options.period)) {
+      if (!isPeriod(options.period)) {
         throw new Error(`Invalid period: ${options.period}`);
       }
 
@@ -284,10 +284,6 @@ export class Pgslice {
       }
     }
   }
-}
-
-function isValidPeriod(period: string): period is Period {
-  return period in SQL_FORMAT;
 }
 
 function rawSql(query: string) {
