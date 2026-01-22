@@ -89,7 +89,7 @@ class PgSliceTest < Minitest::Test
   end
 
   def test_prep_invalid_period
-    assert_error "Invalid period", "prep Posts createdAt decade"
+    assert_error(/Invalid (value for )?period/, "prep Posts createdAt decade")
   end
 
   def test_prep_no_partition_extra_arguments
@@ -143,7 +143,7 @@ class PgSliceTest < Minitest::Test
   def test_swap_creates_retired_mirroring_trigger
     run_command "prep Posts --no-partition"
     run_command "fill Posts"
-    
+
     # Verify no retired mirroring trigger exists before swap
     trigger_result = execute <<~SQL, [quote_ident("Posts")]
       SELECT tgname FROM pg_trigger
@@ -151,10 +151,10 @@ class PgSliceTest < Minitest::Test
       AND tgrelid = $1::regclass
     SQL
     assert !trigger_result.any?, "Retired mirror trigger should not exist before swap"
-    
+
     run_command "swap Posts"
     assert table_exists?("Posts_retired")
-    
+
     # Verify retired mirroring trigger exists after swap
     trigger_result = execute <<~SQL, [quote_ident("Posts")]
       SELECT tgname FROM pg_trigger
@@ -162,29 +162,29 @@ class PgSliceTest < Minitest::Test
       AND tgrelid = $1::regclass
     SQL
     assert trigger_result.any?, "Retired mirror trigger should exist after swap"
-    
+
     # Verify function exists
     function_result = execute <<~SQL
       SELECT proname FROM pg_proc
       WHERE proname = 'Posts_mirror_to_retired'
     SQL
     assert function_result.any?, "Retired mirror function should exist after swap"
-    
+
     # Test that the trigger works - insert into main table and verify it's mirrored to retired
     initial_retired_count = count("Posts_retired")
     initial_main_count = count("Posts")
-    
+
     # Insert a new row into the main table
     now = Time.now.utc
     execute %!INSERT INTO "Posts" ("createdAt") VALUES ($1)!, [now.iso8601]
-    
+
     # Verify it was inserted into main table
     assert_equal initial_main_count + 1, count("Posts")
-    
+
     # Verify it was mirrored to retired table (or updated if it already existed)
     # The retired table should have at least the same number of rows or more
     assert count("Posts_retired") >= initial_retired_count, "Retired table should have been updated"
-    
+
     run_command "unswap Posts"
     run_command "unprep Posts"
   end
@@ -234,7 +234,7 @@ class PgSliceTest < Minitest::Test
     # Retired mirroring trigger is automatically created during swap
     # Verify it exists by checking that we can disable it
     run_command "disable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers disabled for Posts/
-    
+
     # Now enable it again
     run_command "enable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers enabled for Posts/
 
@@ -255,10 +255,10 @@ class PgSliceTest < Minitest::Test
     # Retired mirroring trigger is automatically created during swap
     # Disable it
     run_command "disable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers disabled for Posts/
-    
+
     # Re-enable it
     run_command "enable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers enabled for Posts/
-    
+
     # Disable it again
     run_command "disable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers disabled for Posts/
 
@@ -298,11 +298,11 @@ class PgSliceTest < Minitest::Test
   def test_ulid_fill_with_start
     create_ulid_table("Events")
     run_command "prep Events --no-partition"
-    
+
     # Insert some data with known ULIDs
     start_ulid = generate_ulid(Time.at(1000000000)) # Fixed timestamp for testing
     execute %!INSERT INTO "Events" ("Id", "createdAt") VALUES ($1, NOW())!, [start_ulid]
-    
+
     # Fill starting from a specific ULID
     run_command "fill Events --start #{start_ulid}"
     # Should have filled all 10000 rows plus the one we inserted
@@ -388,9 +388,9 @@ class PgSliceTest < Minitest::Test
   def test_enable_mirroring
     run_command "prep Posts createdAt day"
     assert table_exists?("Posts_intermediate")
-    
+
     run_command "enable_mirroring Posts", expected_stderr: /Mirroring triggers enabled for Posts/
-    
+
     # Verify trigger exists
     trigger_result = execute <<~SQL, [quote_ident("Posts")]
       SELECT tgname FROM pg_trigger
@@ -398,7 +398,7 @@ class PgSliceTest < Minitest::Test
       AND tgrelid = $1::regclass
     SQL
     assert trigger_result.any?, "Mirror trigger should exist"
-    
+
     # Verify function exists
     function_result = execute <<~SQL
       SELECT proname FROM pg_proc
@@ -410,9 +410,9 @@ class PgSliceTest < Minitest::Test
   def test_disable_mirroring
     run_command "prep Posts createdAt day"
     run_command "enable_mirroring Posts", expected_stderr: /Mirroring triggers enabled for Posts/
-    
+
     run_command "disable_mirroring Posts", expected_stderr: /Mirroring triggers disabled for Posts/
-    
+
     # Verify trigger is removed
     trigger_result = execute <<~SQL, [quote_ident("Posts")]
       SELECT tgname FROM pg_trigger
@@ -420,7 +420,7 @@ class PgSliceTest < Minitest::Test
       AND tgrelid = $1::regclass
     SQL
     assert !trigger_result.any?, "Mirror trigger should not exist"
-    
+
     # Verify function is removed
     function_result = execute <<~SQL
       SELECT proname FROM pg_proc
@@ -434,32 +434,32 @@ class PgSliceTest < Minitest::Test
     # Add partitions so we can insert data
     run_command "add_partitions Posts --intermediate --past 1 --future 1"
     run_command "enable_mirroring Posts", expected_stderr: /Mirroring triggers enabled for Posts/
-    
+
     # Create users for foreign key constraints
     user1_id = execute(%!INSERT INTO "Users" DEFAULT VALUES RETURNING "Id"!).first["Id"]
     user2_id = execute(%!INSERT INTO "Users" DEFAULT VALUES RETURNING "Id"!).first["Id"]
-    
+
     # Initially Posts has data from schema, but Posts_intermediate is empty
     initial_posts_count = count("Posts")
     assert_equal 0, count("Posts_intermediate")
-    
+
     # Test INSERT mirroring - new row should appear in both tables
     now = Time.now.utc
     inserted_result = execute %!INSERT INTO "Posts" ("createdAt", "UserId") VALUES ($1, $2) RETURNING "Id"!, [now.iso8601, user1_id]
     inserted_id = inserted_result.first["Id"]
     assert_equal initial_posts_count + 1, count("Posts")
     assert_equal 1, count("Posts_intermediate"), "INSERT should be mirrored to intermediate table"
-    
+
     # Verify the inserted row exists in intermediate table
     intermediate_row = execute(%!SELECT * FROM "Posts_intermediate" WHERE "Id" = $1!, [inserted_id]).first
     assert intermediate_row, "Inserted row should exist in intermediate table"
     assert_equal user1_id.to_s, intermediate_row["UserId"]
-    
+
     # Test UPDATE mirroring - changes should be mirrored
     execute %!UPDATE "Posts" SET "UserId" = $1 WHERE "Id" = $2!, [user2_id, inserted_id]
     updated_intermediate = execute(%!SELECT "UserId" FROM "Posts_intermediate" WHERE "Id" = $1!, [inserted_id]).first
     assert_equal user2_id.to_s, updated_intermediate["UserId"], "UPDATE should be mirrored to intermediate table"
-    
+
     # Test DELETE mirroring - deletion should be mirrored
     execute %!DELETE FROM "Posts" WHERE "Id" = $1!, [inserted_id]
     assert_equal initial_posts_count, count("Posts")
@@ -619,7 +619,9 @@ class PgSliceTest < Minitest::Test
       puts
     end
     if error
-      assert_match error, stderr
+      # TypeScript port (clipanion) outputs usage errors to stdout, Ruby outputs to stderr
+      output_to_check = use_typescript_port? ? stdout + stderr : stderr
+      assert_match error, output_to_check
     elsif expected_stderr
       assert_match expected_stderr, stderr
     else

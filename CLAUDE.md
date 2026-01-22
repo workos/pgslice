@@ -84,6 +84,10 @@ patch this test suite so that it can invoke either the Ruby implementation _or_
 the new TypeScript implementation, allowing it to serve as a regression test
 suite.
 
+When error messages somewhat differ, update the old Ruby test to account for
+slight variations (i.e. "Invalid period" and "Invalid value for period" should
+both pass, for the Ruby and TypeScript versions respectively).
+
 ## New Features
 
 In addition to a CLI interface like the old `pgslice`, the TypeScript version
