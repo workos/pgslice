@@ -39,15 +39,6 @@ export type PrepOptions = {
 );
 
 /**
- * Settings stored in a partitioned table's comment.
- */
-export interface TableSettings {
-  column: string;
-  period: Period;
-  cast: Cast;
-}
-
-/**
  * Options for the `add_partitions` command.
  */
 export interface AddPartitionsOptions {

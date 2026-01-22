@@ -1,7 +1,7 @@
 import { DatabaseTransactionConnection, sql, IdentifierSqlToken } from "slonik";
 import { z } from "zod";
-import type { Cast, Period, TableSettings } from "./types.js";
-import { PERIODS } from "./types.js";
+import type { Cast } from "./types.js";
+import { TableSettings } from "./table-settings.js";
 
 const DEFAULT_SCHEMA = "public";
 
@@ -248,36 +248,6 @@ export class Table {
       return null;
     }
 
-    return parseSettingsComment(result.comment);
+    return TableSettings.parseFromComment(result.comment);
   }
-}
-
-function parseSettingsComment(comment: string): TableSettings | null {
-  const parts = comment.split(",");
-  const settings: Partial<TableSettings> = {};
-
-  for (const part of parts) {
-    const [key, value] = part.split(":");
-    if (key === "column") {
-      settings.column = value;
-    } else if (key === "period" && isValidPeriod(value)) {
-      settings.period = value;
-    } else if (key === "cast" && isValidCast(value)) {
-      settings.cast = value;
-    }
-  }
-
-  if (settings.column && settings.period && settings.cast) {
-    return settings as TableSettings;
-  }
-
-  return null;
-}
-
-function isValidPeriod(value: string): value is Period {
-  return PERIODS.includes(value as Period);
-}
-
-function isValidCast(value: string): value is Cast {
-  return value === "date" || value === "timestamptz";
 }
