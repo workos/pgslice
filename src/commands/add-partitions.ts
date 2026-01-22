@@ -18,9 +18,15 @@ export class AddPartitionsCommand extends BaseCommand {
       relative to the current date.
     `,
     examples: [
-      ["Add partitions to intermediate table", "$0 add_partitions posts --intermediate --past 1 --future 3"],
+      [
+        "Add partitions to intermediate table",
+        "$0 add_partitions posts --intermediate --past 1 --future 3",
+      ],
       ["Add partitions after swap", "$0 add_partitions posts --future 3"],
-      ["Specify tablespace", "$0 add_partitions posts --intermediate --future 3 --tablespace fast_storage"],
+      [
+        "Specify tablespace",
+        "$0 add_partitions posts --intermediate --future 3 --tablespace fast_storage",
+      ],
     ],
   });
 

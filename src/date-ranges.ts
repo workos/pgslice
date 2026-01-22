@@ -87,7 +87,9 @@ export class DateRanges implements Iterable<DateRange> {
   readonly #future: number;
 
   constructor(options: DateRangesOptions) {
-    this.#today = options.today ? roundDate(options.today, options.period) : roundDate(new Date(), options.period);
+    this.#today = options.today
+      ? roundDate(options.today, options.period)
+      : roundDate(new Date(), options.period);
     this.#period = options.period;
     this.#past = options.past;
     this.#future = options.future;

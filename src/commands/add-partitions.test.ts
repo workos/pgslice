@@ -19,7 +19,9 @@ describe("AddPartitionsCommand", () => {
     expect(output).toContain("--past must be a non-negative integer");
   });
 
-  test("returns error when --future is negative", async ({ commandContext }) => {
+  test("returns error when --future is negative", async ({
+    commandContext,
+  }) => {
     const command = new AddPartitionsCommand();
     command.context = commandContext;
     command.table = "posts";
@@ -33,7 +35,9 @@ describe("AddPartitionsCommand", () => {
     expect(output).toContain("--future must be a non-negative integer");
   });
 
-  test("returns error when --past is not a number", async ({ commandContext }) => {
+  test("returns error when --past is not a number", async ({
+    commandContext,
+  }) => {
     const command = new AddPartitionsCommand();
     command.context = commandContext;
     command.table = "posts";
@@ -47,7 +51,9 @@ describe("AddPartitionsCommand", () => {
     expect(output).toContain("--past must be a non-negative integer");
   });
 
-  test("returns error when --future is not a number", async ({ commandContext }) => {
+  test("returns error when --future is not a number", async ({
+    commandContext,
+  }) => {
     const command = new AddPartitionsCommand();
     command.context = commandContext;
     command.table = "posts";

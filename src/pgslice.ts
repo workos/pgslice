@@ -145,7 +145,10 @@ export class Pgslice {
     for (const indexDef of await table.indexDefs(tx)) {
       // Transform the index definition to point to the intermediate table
       const transformedIndexDef = indexDef
-        .replace(/ ON \S+ USING /, ` ON ${intermediate.toQuotedString()} USING `)
+        .replace(
+          / ON \S+ USING /,
+          ` ON ${intermediate.toQuotedString()} USING `,
+        )
         .replace(/ INDEX .+ ON /, " INDEX ON ");
       await tx.query(sql.type(z.object({}))`${rawSql(transformedIndexDef)}`);
     }

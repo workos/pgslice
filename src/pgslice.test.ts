@@ -760,7 +760,9 @@ describe("Pgslice.addPartitions", () => {
           table: "posts",
           intermediate: false,
         }),
-      ).rejects.toThrow(/No settings found.*Did you mean to use --intermediate/s);
+      ).rejects.toThrow(
+        /No settings found.*Did you mean to use --intermediate/s,
+      );
     });
 
     test("throws when no settings found (intermediate)", async ({
