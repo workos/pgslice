@@ -4,7 +4,7 @@ import { DatabaseTransactionConnection } from "slonik";
 import { BaseCommand } from "./base.js";
 
 export class EnableMirroringCommand extends BaseCommand {
-  static override paths = [["enable_mirroring"]];
+  static override paths = [["mirroring", "enable"], ["enable_mirroring"]];
 
   static override usage = Command.Usage({
     description:
@@ -15,13 +15,10 @@ export class EnableMirroringCommand extends BaseCommand {
       partitioning process to keep the intermediate table in sync with live changes.
     `,
     examples: [
-      [
-        "Enable mirroring for a table",
-        "$0 enable_mirroring posts",
-      ],
+      ["Enable mirroring for a table", "$0 mirroring enable posts"],
       [
         "Enable mirroring with explicit schema",
-        "$0 enable_mirroring myschema.posts",
+        "$0 mirroring enable myschema.posts",
       ],
     ],
   });

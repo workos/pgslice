@@ -4,20 +4,19 @@ import { DatabaseTransactionConnection } from "slonik";
 import { BaseCommand } from "./base.js";
 
 export class DisableMirroringCommand extends BaseCommand {
-  static override paths = [["disable_mirroring"]];
+  static override paths = [["mirroring", "disable"], ["disable_mirroring"]];
 
   static override usage = Command.Usage({
-    description:
-      "Disable mirroring triggers after partitioning is complete",
+    description: "Disable mirroring triggers after partitioning is complete",
     details: `
       This command removes the triggers on the source table that mirror operations
       to the intermediate table. Use this after partitioning is complete.
     `,
     examples: [
-      ["Disable mirroring for a table", "$0 disable_mirroring posts"],
+      ["Disable mirroring for a table", "$0 mirroring disable posts"],
       [
         "Disable mirroring with explicit schema",
-        "$0 disable_mirroring myschema.posts",
+        "$0 mirroring disable myschema.posts",
       ],
     ],
   });
