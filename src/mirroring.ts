@@ -2,7 +2,6 @@ import { DatabaseTransactionConnection, sql } from "slonik";
 import { z } from "zod";
 
 import { Table } from "./table.js";
-import { rawSql } from "./sql-utils.js";
 
 interface MirroringOptions {
   source: Table;
@@ -58,34 +57,44 @@ export class Mirroring {
     return sql.identifier([`${this.#source.name}_mirror_trigger`]);
   }
 
-  #buildWhereClause(columns: string[], record: "OLD" | "NEW") {
-    const conditions = columns.map((col) => {
-      return rawSql(`${quoteIdent(col)} = ${record}.${quoteIdent(col)}`);
-    });
-    return sql.join(conditions, sql.fragment` AND `);
+  #buildWhereClause(columns: string[]) {
+    return sql.join(
+      columns.map(
+        (col) =>
+          sql.fragment`${sql.identifier([col])} = OLD.${sql.identifier([col])}`,
+      ),
+      sql.fragment` AND `,
+    );
   }
 
   #buildSetClause(columns: string[]) {
-    const assignments = columns.map((col) => {
-      return rawSql(`${quoteIdent(col)} = NEW.${quoteIdent(col)}`);
-    });
-    return sql.join(assignments, sql.fragment`, `);
+    return sql.join(
+      columns.map(
+        (col) =>
+          sql.fragment`${sql.identifier([col])} = NEW.${sql.identifier([col])}`,
+      ),
+      sql.fragment`, `,
+    );
   }
 
   #buildColumnList(columns: string[]) {
-    const idents = columns.map((col) => rawSql(quoteIdent(col)));
-    return sql.join(idents, sql.fragment`, `);
+    return sql.join(
+      columns.map((col) => sql.identifier([col])),
+      sql.fragment`, `,
+    );
   }
 
   #buildNewTupleList(columns: string[]) {
-    const values = columns.map((col) => rawSql(`NEW.${quoteIdent(col)}`));
-    return sql.join(values, sql.fragment`, `);
+    return sql.join(
+      columns.map((col) => sql.fragment`NEW.${sql.identifier([col])}`),
+      sql.fragment`, `,
+    );
   }
 
   #buildFunctionSql(columns: string[], primaryKeyColumns: string[]) {
     const whereColumns =
       primaryKeyColumns.length > 0 ? primaryKeyColumns : columns;
-    const whereClause = this.#buildWhereClause(whereColumns, "OLD");
+    const whereClause = this.#buildWhereClause(whereColumns);
     const setClause = this.#buildSetClause(columns);
     const columnList = this.#buildColumnList(columns);
     const newTupleList = this.#buildNewTupleList(columns);
@@ -130,11 +139,4 @@ export class Mirroring {
       DROP FUNCTION IF EXISTS ${this.#functionName}()
     `;
   }
-}
-
-/**
- * Quotes an identifier for use in SQL.
- */
-function quoteIdent(name: string): string {
-  return `"${name.replace(/"/g, '""')}"`;
 }

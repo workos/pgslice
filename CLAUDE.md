@@ -59,6 +59,9 @@ This new version will use the following node packages:
   connecting to the database and running statements.
   - Avoid using `sq.unsafe`. According to the `slonik` docs, it must not be used
     in production code; let's follow their advice.
+  - At times you'll be tempted to invent your own `quoteIdent` type of helper.
+    You probably don't need it and combinations of `sql.identifier`, `sql.join`,
+    and `sql.fragment` can probably do what you need.
 - [`clipanion`](https://github.com/arcanis/clipanion) - CLI parsing library with
   similar semantics to `thor` from the Ruby version, but individual commands
   are represented by classes.
