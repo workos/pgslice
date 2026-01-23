@@ -42,9 +42,10 @@ export abstract class BaseCommand extends Command<Context> {
       } else {
         this.context.stderr.write(`${error}\n`);
       }
+
       return 1;
     } finally {
-      await this.context.pgslice?.close();
+      await this.context.pgslice.close();
     }
   }
 
