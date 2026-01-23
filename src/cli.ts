@@ -1,6 +1,7 @@
 import { Builtins, Cli } from "clipanion";
 
 import { AddPartitionsCommand } from "./commands/add-partitions.js";
+import { DisableMirroringCommand } from "./commands/disable-mirroring.js";
 import { EnableMirroringCommand } from "./commands/enable-mirroring.js";
 import { HelloCommand } from "./commands/hello.js";
 import { PrepCommand } from "./commands/prep.js";
@@ -15,6 +16,7 @@ export function createCli(): Cli {
   cli.register(Builtins.HelpCommand);
   cli.register(Builtins.VersionCommand);
   cli.register(AddPartitionsCommand);
+  cli.register(DisableMirroringCommand);
   cli.register(EnableMirroringCommand);
   cli.register(HelloCommand);
   cli.register(PrepCommand);

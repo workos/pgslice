@@ -296,3 +296,138 @@ describe("Pgslice.enableMirroring", () => {
     });
   });
 });
+
+describe("Pgslice.disableMirroring", () => {
+  test.beforeEach(async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        body TEXT,
+        created_at DATE NOT NULL
+      )
+    `);
+
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts_intermediate (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        body TEXT,
+        created_at DATE NOT NULL
+      )
+    `);
+  });
+
+  test("drops trigger function", async ({ pgslice, transaction }) => {
+    await pgslice.enableMirroring(transaction, { table: "posts" });
+    await pgslice.disableMirroring(transaction, { table: "posts" });
+
+    const count = await transaction.oneFirst(
+      sql.type(z.object({ count: z.coerce.number() }))`
+        SELECT COUNT(*)::int FROM pg_proc
+        WHERE proname = 'posts_mirror_to_intermediate'
+      `,
+    );
+    expect(count).toBe(0);
+  });
+
+  test("drops trigger", async ({ pgslice, transaction }) => {
+    await pgslice.enableMirroring(transaction, { table: "posts" });
+    await pgslice.disableMirroring(transaction, { table: "posts" });
+
+    const count = await transaction.oneFirst(
+      sql.type(z.object({ count: z.coerce.number() }))`
+        SELECT COUNT(*)::int FROM pg_trigger
+        WHERE tgname = 'posts_mirror_trigger'
+      `,
+    );
+    expect(count).toBe(0);
+  });
+
+  test("is idempotent (can be called when no trigger exists)", async ({
+    pgslice,
+    transaction,
+  }) => {
+    await pgslice.disableMirroring(transaction, { table: "posts" });
+
+    const count = await transaction.oneFirst(
+      sql.type(z.object({ count: z.coerce.number() }))`
+        SELECT COUNT(*)::int FROM pg_trigger
+        WHERE tgname = 'posts_mirror_trigger'
+      `,
+    );
+    expect(count).toBe(0);
+  });
+
+  test("works after enabling (enable then disable removes mirroring)", async ({
+    pgslice,
+    transaction,
+  }) => {
+    await pgslice.enableMirroring(transaction, { table: "posts" });
+
+    await transaction.query(sql.unsafe`
+      INSERT INTO posts (title, body, created_at) VALUES ('Before disable', 'Body', '2024-01-15')
+    `);
+
+    const beforeCount = await transaction.oneFirst(
+      sql.type(z.object({ count: z.coerce.number() }))`
+        SELECT COUNT(*)::int FROM posts_intermediate
+      `,
+    );
+    expect(beforeCount).toBe(1);
+
+    await pgslice.disableMirroring(transaction, { table: "posts" });
+
+    await transaction.query(sql.unsafe`
+      INSERT INTO posts (title, body, created_at) VALUES ('After disable', 'Body', '2024-01-16')
+    `);
+
+    const afterCount = await transaction.oneFirst(
+      sql.type(z.object({ count: z.coerce.number() }))`
+        SELECT COUNT(*)::int FROM posts_intermediate
+      `,
+    );
+    expect(afterCount).toBe(1);
+  });
+
+  test("handles schema-qualified table names", async ({
+    pgslice,
+    transaction,
+  }) => {
+    await transaction.query(sql.unsafe`CREATE SCHEMA myschema`);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE myschema.posts (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL
+      )
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE myschema.posts_intermediate (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL
+      )
+    `);
+
+    await pgslice.enableMirroring(transaction, { table: "myschema.posts" });
+    await pgslice.disableMirroring(transaction, { table: "myschema.posts" });
+
+    const count = await transaction.oneFirst(
+      sql.type(z.object({ count: z.coerce.number() }))`
+        SELECT COUNT(*)::int FROM pg_proc
+        WHERE proname = 'posts_mirror_to_intermediate'
+      `,
+    );
+    expect(count).toBe(0);
+  });
+
+  describe("error handling", () => {
+    test("throws when source table not found", async ({
+      pgslice,
+      transaction,
+    }) => {
+      await expect(
+        pgslice.disableMirroring(transaction, { table: "nonexistent" }),
+      ).rejects.toThrow("Table not found: public.nonexistent");
+    });
+  });
+});

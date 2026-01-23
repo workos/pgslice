@@ -9,6 +9,7 @@ import { z } from "zod";
 
 import type {
   AddPartitionsOptions,
+  DisableMirroringOptions,
   EnableMirroringOptions,
   Period,
   PrepOptions,
@@ -313,6 +314,25 @@ export class Pgslice {
 
     const mirroring = new Mirroring({ source: table, target: intermediate });
     await mirroring.enable(tx);
+  }
+
+  /**
+   * Disables mirroring triggers from a table to its intermediate table.
+   * This removes the triggers that were created by enableMirroring.
+   */
+  async disableMirroring(
+    tx: DatabaseTransactionConnection,
+    options: DisableMirroringOptions,
+  ): Promise<void> {
+    const table = Table.parse(options.table);
+    const intermediate = table.intermediate();
+
+    if (!(await table.exists(tx))) {
+      throw new Error(`Table not found: ${table.toString()}`);
+    }
+
+    const mirroring = new Mirroring({ source: table, target: intermediate });
+    await mirroring.disable(tx);
   }
 }
 

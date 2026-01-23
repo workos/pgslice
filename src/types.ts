@@ -62,3 +62,10 @@ export interface AddPartitionsOptions {
 export interface EnableMirroringOptions {
   table: string;
 }
+
+/**
+ * Options for the `disable_mirroring` command.
+ */
+export interface DisableMirroringOptions {
+  table: string;
+}

@@ -423,7 +423,13 @@ class PgSliceTest < Minitest::Test
       run_command "enable_mirroring Posts", expected_stderr: /Mirroring triggers enabled for Posts/
     end
 
-    run_command "disable_mirroring Posts", expected_stderr: /Mirroring triggers disabled for Posts/
+    # TypeScript port outputs success messages to stdout, Ruby outputs to stderr
+    if use_typescript_port?
+      stdout = run_command "disable_mirroring Posts"
+      assert_match /Mirroring triggers disabled for Posts/, stdout
+    else
+      run_command "disable_mirroring Posts", expected_stderr: /Mirroring triggers disabled for Posts/
+    end
 
     # Verify trigger is removed
     trigger_result = execute <<~SQL, [quote_ident("Posts")]
