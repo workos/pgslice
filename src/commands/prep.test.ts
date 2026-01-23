@@ -6,17 +6,18 @@ import { commandTest as test } from "../testing/index.js";
 import { PrepCommand } from "./prep.js";
 
 describe("PrepCommand", () => {
-  test("returns error when --no-partition used with column/period", async ({
-    transaction,
-    commandContext,
-  }) => {
+  test.beforeEach(async ({ transaction }) => {
     await transaction.query(sql.unsafe`
       CREATE TABLE posts (
         id SERIAL PRIMARY KEY,
         created_at DATE NOT NULL
       )
     `);
+  });
 
+  test("returns error when --no-partition used with column/period", async ({
+    commandContext,
+  }) => {
     const command = new PrepCommand();
     command.context = commandContext;
     command.table = "posts";
@@ -25,22 +26,15 @@ describe("PrepCommand", () => {
     command.partition = false;
 
     const exitCode = await command.execute();
+
     expect(exitCode).toBe(1);
     const output = (commandContext.stderr as PassThrough).read()?.toString();
     expect(output).toContain('Usage: "pgslice prep TABLE --no-partition"');
   });
 
   test("returns error when partition is true but column is missing", async ({
-    transaction,
     commandContext,
   }) => {
-    await transaction.query(sql.unsafe`
-      CREATE TABLE posts (
-        id SERIAL PRIMARY KEY,
-        created_at DATE NOT NULL
-      )
-    `);
-
     const command = new PrepCommand();
     command.context = commandContext;
     command.table = "posts";
@@ -49,22 +43,15 @@ describe("PrepCommand", () => {
     command.partition = true;
 
     const exitCode = await command.execute();
+
     expect(exitCode).toBe(1);
     const output = (commandContext.stderr as PassThrough).read()?.toString();
     expect(output).toContain('Usage: "pgslice prep TABLE COLUMN PERIOD"');
   });
 
   test("returns error when partition is true but period is missing", async ({
-    transaction,
     commandContext,
   }) => {
-    await transaction.query(sql.unsafe`
-      CREATE TABLE posts (
-        id SERIAL PRIMARY KEY,
-        created_at DATE NOT NULL
-      )
-    `);
-
     const command = new PrepCommand();
     command.context = commandContext;
     command.table = "posts";
@@ -73,6 +60,7 @@ describe("PrepCommand", () => {
     command.partition = true;
 
     const exitCode = await command.execute();
+
     expect(exitCode).toBe(1);
     const output = (commandContext.stderr as PassThrough).read()?.toString();
     expect(output).toContain('Usage: "pgslice prep TABLE COLUMN PERIOD"');

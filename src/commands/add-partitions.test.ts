@@ -14,6 +14,7 @@ describe("AddPartitionsCommand", () => {
     command.future = "0";
 
     const exitCode = await command.execute();
+
     expect(exitCode).toBe(1);
     const output = (commandContext.stderr as PassThrough).read()?.toString();
     expect(output).toContain("--past must be a non-negative integer");
@@ -30,6 +31,7 @@ describe("AddPartitionsCommand", () => {
     command.future = "-1";
 
     const exitCode = await command.execute();
+
     expect(exitCode).toBe(1);
     const output = (commandContext.stderr as PassThrough).read()?.toString();
     expect(output).toContain("--future must be a non-negative integer");
@@ -46,6 +48,7 @@ describe("AddPartitionsCommand", () => {
     command.future = "0";
 
     const exitCode = await command.execute();
+
     expect(exitCode).toBe(1);
     const output = (commandContext.stderr as PassThrough).read()?.toString();
     expect(output).toContain("--past must be a non-negative integer");
@@ -62,6 +65,7 @@ describe("AddPartitionsCommand", () => {
     command.future = "xyz";
 
     const exitCode = await command.execute();
+
     expect(exitCode).toBe(1);
     const output = (commandContext.stderr as PassThrough).read()?.toString();
     expect(output).toContain("--future must be a non-negative integer");

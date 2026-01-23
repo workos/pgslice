@@ -5,19 +5,23 @@ import { z } from "zod";
 import { pgsliceTest as test } from "./testing/index.js";
 
 describe("Pgslice.prep", () => {
+  test.beforeEach(async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        author_id INTEGER NOT NULL,
+        category_id INTEGER,
+        created_at DATE NOT NULL
+      )
+    `);
+  });
+
   describe("partitioned tables", () => {
     test("creates a partitioned intermediate table", async ({
       pgslice,
       transaction,
     }) => {
-      await transaction.query(sql.unsafe`
-        CREATE TABLE posts (
-          id SERIAL PRIMARY KEY,
-          title TEXT NOT NULL,
-          created_at DATE NOT NULL
-        )
-      `);
-
       await pgslice.prep(transaction, {
         table: "posts",
         column: "created_at",
@@ -39,13 +43,6 @@ describe("Pgslice.prep", () => {
       transaction,
     }) => {
       await transaction.query(sql.unsafe`
-        CREATE TABLE posts (
-          id SERIAL PRIMARY KEY,
-          title TEXT NOT NULL,
-          created_at DATE NOT NULL
-        )
-      `);
-      await transaction.query(sql.unsafe`
         CREATE INDEX idx_posts_title ON posts (title)
       `);
 
@@ -62,7 +59,7 @@ describe("Pgslice.prep", () => {
           WHERE tablename = 'posts_intermediate' AND indexname LIKE '%title%'
         `,
       );
-      expect(result.length).toBeGreaterThan(0);
+      expect(result).toEqual([{ indexname: "posts_intermediate_title_idx" }]);
     });
 
     test("copies multiple indexes to intermediate table", async ({
@@ -70,22 +67,10 @@ describe("Pgslice.prep", () => {
       transaction,
     }) => {
       await transaction.query(sql.unsafe`
-        CREATE TABLE posts (
-          id SERIAL PRIMARY KEY,
-          title TEXT NOT NULL,
-          author TEXT NOT NULL,
-          status TEXT NOT NULL,
-          created_at DATE NOT NULL
-        )
-      `);
-      await transaction.query(sql.unsafe`
         CREATE INDEX idx_posts_title ON posts (title)
       `);
       await transaction.query(sql.unsafe`
-        CREATE INDEX idx_posts_author ON posts (author)
-      `);
-      await transaction.query(sql.unsafe`
-        CREATE INDEX idx_posts_status ON posts (status)
+        CREATE INDEX idx_posts_author ON posts (author_id)
       `);
 
       await pgslice.prep(transaction, {
@@ -101,10 +86,10 @@ describe("Pgslice.prep", () => {
           WHERE tablename = 'posts_intermediate'
         `,
       );
-      const indexNames = result.map((r) => r.indexname);
-      expect(indexNames.some((name) => name.includes("title"))).toBe(true);
-      expect(indexNames.some((name) => name.includes("author"))).toBe(true);
-      expect(indexNames.some((name) => name.includes("status"))).toBe(true);
+      expect(result).toEqual([
+        { indexname: "posts_intermediate_title_idx" },
+        { indexname: "posts_intermediate_author_id_idx" },
+      ]);
     });
 
     test("copies foreign keys to intermediate table", async ({
@@ -115,11 +100,8 @@ describe("Pgslice.prep", () => {
         CREATE TABLE authors (id SERIAL PRIMARY KEY)
       `);
       await transaction.query(sql.unsafe`
-        CREATE TABLE posts (
-          id SERIAL PRIMARY KEY,
-          author_id INTEGER REFERENCES authors(id),
-          created_at DATE NOT NULL
-        )
+        ALTER TABLE posts ADD CONSTRAINT fk_author
+        FOREIGN KEY (author_id) REFERENCES authors(id)
       `);
 
       await pgslice.prep(transaction, {
@@ -135,7 +117,9 @@ describe("Pgslice.prep", () => {
           WHERE conrelid = 'public.posts_intermediate'::regclass AND contype = 'f'
         `,
       );
-      expect(result.length).toBe(1);
+      expect(result).toEqual([
+        { conname: "posts_intermediate_author_id_fkey" },
+      ]);
     });
 
     test("copies multiple foreign keys to intermediate table", async ({
@@ -149,16 +133,12 @@ describe("Pgslice.prep", () => {
         CREATE TABLE categories (id SERIAL PRIMARY KEY)
       `);
       await transaction.query(sql.unsafe`
-        CREATE TABLE tags (id SERIAL PRIMARY KEY)
+        ALTER TABLE posts ADD CONSTRAINT fk_author
+        FOREIGN KEY (author_id) REFERENCES authors(id)
       `);
       await transaction.query(sql.unsafe`
-        CREATE TABLE posts (
-          id SERIAL PRIMARY KEY,
-          author_id INTEGER REFERENCES authors(id),
-          category_id INTEGER REFERENCES categories(id),
-          tag_id INTEGER REFERENCES tags(id),
-          created_at DATE NOT NULL
-        )
+        ALTER TABLE posts ADD CONSTRAINT fk_category
+        FOREIGN KEY (category_id) REFERENCES categories(id)
       `);
 
       await pgslice.prep(transaction, {
@@ -174,20 +154,16 @@ describe("Pgslice.prep", () => {
           WHERE conrelid = 'public.posts_intermediate'::regclass AND contype = 'f'
         `,
       );
-      expect(result.length).toBe(3);
+      expect(result).toEqual([
+        { conname: "posts_intermediate_author_id_fkey" },
+        { conname: "posts_intermediate_category_id_fkey" },
+      ]);
     });
 
     test("stores correct metadata in table comment", async ({
       pgslice,
       transaction,
     }) => {
-      await transaction.query(sql.unsafe`
-        CREATE TABLE posts (
-          id SERIAL PRIMARY KEY,
-          created_at DATE NOT NULL
-        )
-      `);
-
       await pgslice.prep(transaction, {
         table: "posts",
         column: "created_at",
@@ -211,22 +187,15 @@ describe("Pgslice.prep", () => {
       pgslice,
       transaction,
     }) => {
-      await transaction.query(sql.unsafe`
-        CREATE TABLE users (
-          id SERIAL PRIMARY KEY,
-          name TEXT NOT NULL
-        )
-      `);
-
       await pgslice.prep(transaction, {
-        table: "users",
+        table: "posts",
         partition: false,
       });
 
       const result = await transaction.one(
         sql.type(z.object({ relkind: z.string() }))`
           SELECT relkind FROM pg_class
-          WHERE relname = 'users_intermediate'
+          WHERE relname = 'posts_intermediate'
         `,
       );
       expect(result.relkind).toBe("r");
@@ -235,13 +204,6 @@ describe("Pgslice.prep", () => {
 
   describe("column type detection", () => {
     test("detects date column cast", async ({ pgslice, transaction }) => {
-      await transaction.query(sql.unsafe`
-        CREATE TABLE posts (
-          id SERIAL PRIMARY KEY,
-          created_at DATE NOT NULL
-        )
-      `);
-
       await pgslice.prep(transaction, {
         table: "posts",
         column: "created_at",
@@ -285,17 +247,19 @@ describe("Pgslice.prep", () => {
   });
 
   describe("period types", () => {
-    test("stores correct metadata with day period", async ({
-      pgslice,
-      transaction,
-    }) => {
+    test.beforeEach(async ({ transaction }) => {
       await transaction.query(sql.unsafe`
         CREATE TABLE events (
           id SERIAL PRIMARY KEY,
           occurred_at DATE NOT NULL
         )
       `);
+    });
 
+    test("stores correct metadata with day period", async ({
+      pgslice,
+      transaction,
+    }) => {
       await pgslice.prep(transaction, {
         table: "events",
         column: "occurred_at",
@@ -317,13 +281,6 @@ describe("Pgslice.prep", () => {
       pgslice,
       transaction,
     }) => {
-      await transaction.query(sql.unsafe`
-        CREATE TABLE events (
-          id SERIAL PRIMARY KEY,
-          occurred_at DATE NOT NULL
-        )
-      `);
-
       await pgslice.prep(transaction, {
         table: "events",
         column: "occurred_at",
@@ -385,13 +342,6 @@ describe("Pgslice.prep", () => {
     });
 
     test("throws when column not found", async ({ pgslice, transaction }) => {
-      await transaction.query(sql.unsafe`
-        CREATE TABLE posts (
-          id SERIAL PRIMARY KEY,
-          title TEXT NOT NULL
-        )
-      `);
-
       await expect(
         pgslice.prep(transaction, {
           table: "posts",
@@ -403,13 +353,6 @@ describe("Pgslice.prep", () => {
     });
 
     test("throws for invalid period", async ({ pgslice, transaction }) => {
-      await transaction.query(sql.unsafe`
-        CREATE TABLE posts (
-          id SERIAL PRIMARY KEY,
-          created_at DATE NOT NULL
-        )
-      `);
-
       await expect(
         pgslice.prep(transaction, {
           table: "posts",
@@ -424,12 +367,6 @@ describe("Pgslice.prep", () => {
       pgslice,
       transaction,
     }) => {
-      await transaction.query(sql.unsafe`
-        CREATE TABLE posts (
-          id SERIAL PRIMARY KEY,
-          created_at DATE NOT NULL
-        )
-      `);
       await transaction.query(sql.unsafe`
         CREATE TABLE posts_intermediate (id SERIAL PRIMARY KEY)
       `);
@@ -457,10 +394,7 @@ describe("Pgslice.addPartitions", () => {
   });
 
   describe("intermediate table", () => {
-    test("creates partitions for intermediate table", async ({
-      pgslice,
-      transaction,
-    }) => {
+    test.beforeEach(async ({ pgslice, transaction }) => {
       await transaction.query(sql.unsafe`
         CREATE TABLE posts (
           id SERIAL PRIMARY KEY,
@@ -475,7 +409,12 @@ describe("Pgslice.addPartitions", () => {
         period: "month",
         partition: true,
       });
+    });
 
+    test("creates partitions for intermediate table", async ({
+      pgslice,
+      transaction,
+    }) => {
       await pgslice.addPartitions(transaction, {
         table: "posts",
         intermediate: true,
@@ -503,21 +442,6 @@ describe("Pgslice.addPartitions", () => {
       pgslice,
       transaction,
     }) => {
-      await transaction.query(sql.unsafe`
-        CREATE TABLE posts (
-          id SERIAL PRIMARY KEY,
-          title TEXT NOT NULL,
-          created_at DATE NOT NULL
-        )
-      `);
-
-      await pgslice.prep(transaction, {
-        table: "posts",
-        column: "created_at",
-        period: "month",
-        partition: true,
-      });
-
       await pgslice.addPartitions(transaction, {
         table: "posts",
         intermediate: true,
@@ -538,21 +462,6 @@ describe("Pgslice.addPartitions", () => {
       pgslice,
       transaction,
     }) => {
-      await transaction.query(sql.unsafe`
-        CREATE TABLE posts (
-          id SERIAL PRIMARY KEY,
-          title TEXT NOT NULL,
-          created_at DATE NOT NULL
-        )
-      `);
-
-      await pgslice.prep(transaction, {
-        table: "posts",
-        column: "created_at",
-        period: "month",
-        partition: true,
-      });
-
       await pgslice.addPartitions(transaction, {
         table: "posts",
         intermediate: true,
@@ -692,7 +601,10 @@ describe("Pgslice.addPartitions", () => {
         `,
       );
 
-      expect(partitions.length).toBe(2);
+      expect(partitions).toEqual([
+        { tablename: "events_202601" },
+        { tablename: "events_202602" },
+      ]);
     });
   });
 
