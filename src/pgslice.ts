@@ -7,10 +7,17 @@ import {
 } from "slonik";
 import { z } from "zod";
 
-import type { AddPartitionsOptions, Period, PrepOptions } from "./types.js";
+import type {
+  AddPartitionsOptions,
+  EnableMirroringOptions,
+  Period,
+  PrepOptions,
+} from "./types.js";
 import { isPeriod } from "./types.js";
 import { Table, getServerVersionNum } from "./table.js";
 import { DateRanges } from "./date-ranges.js";
+import { rawSql } from "./sql-utils.js";
+import { Mirroring } from "./mirroring.js";
 
 interface PgsliceOptions {
   dryRun?: boolean;
@@ -284,12 +291,29 @@ export class Pgslice {
       }
     }
   }
-}
 
-function rawSql(query: string) {
-  const raw = Object.freeze([query]);
-  const strings = Object.assign([query], { raw });
-  return sql.fragment(strings);
+  /**
+   * Enables mirroring triggers from a table to its intermediate table.
+   * This ensures that INSERT, UPDATE, and DELETE operations on the source
+   * table are automatically replicated to the intermediate table.
+   */
+  async enableMirroring(
+    tx: DatabaseTransactionConnection,
+    options: EnableMirroringOptions,
+  ): Promise<void> {
+    const table = Table.parse(options.table);
+    const intermediate = table.intermediate();
+
+    if (!(await table.exists(tx))) {
+      throw new Error(`Table not found: ${table.toString()}`);
+    }
+    if (!(await intermediate.exists(tx))) {
+      throw new Error(`Table not found: ${intermediate.toString()}`);
+    }
+
+    const mirroring = new Mirroring({ source: table, target: intermediate });
+    await mirroring.enable(tx);
+  }
 }
 
 function formatDateForSql(date: Date, cast: "date" | "timestamptz") {

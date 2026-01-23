@@ -55,3 +55,10 @@ export interface AddPartitionsOptions {
   future?: number;
   tablespace?: string;
 }
+
+/**
+ * Options for the `enable_mirroring` command.
+ */
+export interface EnableMirroringOptions {
+  table: string;
+}

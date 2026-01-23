@@ -389,7 +389,13 @@ class PgSliceTest < Minitest::Test
     run_command "prep Posts createdAt day"
     assert table_exists?("Posts_intermediate")
 
-    run_command "enable_mirroring Posts", expected_stderr: /Mirroring triggers enabled for Posts/
+    # TypeScript port outputs success messages to stdout, Ruby outputs to stderr
+    if use_typescript_port?
+      stdout = run_command "enable_mirroring Posts"
+      assert_match /Mirroring triggers enabled for Posts/, stdout
+    else
+      run_command "enable_mirroring Posts", expected_stderr: /Mirroring triggers enabled for Posts/
+    end
 
     # Verify trigger exists
     trigger_result = execute <<~SQL, [quote_ident("Posts")]
@@ -409,7 +415,13 @@ class PgSliceTest < Minitest::Test
 
   def test_disable_mirroring
     run_command "prep Posts createdAt day"
-    run_command "enable_mirroring Posts", expected_stderr: /Mirroring triggers enabled for Posts/
+    # TypeScript port outputs success messages to stdout, Ruby outputs to stderr
+    if use_typescript_port?
+      stdout = run_command "enable_mirroring Posts"
+      assert_match /Mirroring triggers enabled for Posts/, stdout
+    else
+      run_command "enable_mirroring Posts", expected_stderr: /Mirroring triggers enabled for Posts/
+    end
 
     run_command "disable_mirroring Posts", expected_stderr: /Mirroring triggers disabled for Posts/
 
@@ -433,7 +445,13 @@ class PgSliceTest < Minitest::Test
     run_command "prep Posts createdAt day"
     # Add partitions so we can insert data
     run_command "add_partitions Posts --intermediate --past 1 --future 1"
-    run_command "enable_mirroring Posts", expected_stderr: /Mirroring triggers enabled for Posts/
+    # TypeScript port outputs success messages to stdout, Ruby outputs to stderr
+    if use_typescript_port?
+      stdout = run_command "enable_mirroring Posts"
+      assert_match /Mirroring triggers enabled for Posts/, stdout
+    else
+      run_command "enable_mirroring Posts", expected_stderr: /Mirroring triggers enabled for Posts/
+    end
 
     # Create users for foreign key constraints
     user1_id = execute(%!INSERT INTO "Users" DEFAULT VALUES RETURNING "Id"!).first["Id"]
