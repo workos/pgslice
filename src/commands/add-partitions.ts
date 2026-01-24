@@ -1,7 +1,8 @@
 import { Command, Option } from "clipanion";
-import { DatabaseTransactionConnection } from "slonik";
+import * as t from "typanion";
 
 import { BaseCommand } from "./base.js";
+import { Pgslice } from "../pgslice.js";
 
 export class AddPartitionsCommand extends BaseCommand {
   static override paths = [["add_partitions"]];
@@ -36,32 +37,25 @@ export class AddPartitionsCommand extends BaseCommand {
   });
   past = Option.String("--past", "0", {
     description: "Number of past partitions to add",
+    validator: t.cascade(t.isNumber(), [t.isInteger(), t.isAtLeast(0)]),
   });
   future = Option.String("--future", "0", {
     description: "Number of future partitions to add",
+    validator: t.cascade(t.isNumber(), [t.isInteger(), t.isAtLeast(0)]),
   });
   tablespace = Option.String("--tablespace", {
     description: "Tablespace to use for new partitions",
   });
 
-  override async perform(tx: DatabaseTransactionConnection): Promise<void> {
-    const past = parseInt(this.past, 10);
-    const future = parseInt(this.future, 10);
-
-    if (isNaN(past) || past < 0) {
-      throw new Error("--past must be a non-negative integer");
-    }
-
-    if (isNaN(future) || future < 0) {
-      throw new Error("--future must be a non-negative integer");
-    }
-
-    await this.context.pgslice.addPartitions(tx, {
-      table: this.table,
-      intermediate: this.intermediate,
-      past,
-      future,
-      tablespace: this.tablespace,
-    });
+  override async perform(pgslice: Pgslice): Promise<void> {
+    await pgslice.start(async (tx) =>
+      pgslice.addPartitions(tx, {
+        table: this.table,
+        intermediate: this.intermediate,
+        past: this.past,
+        future: this.future,
+        tablespace: this.tablespace,
+      }),
+    );
   }
 }
