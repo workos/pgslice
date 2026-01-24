@@ -417,7 +417,8 @@ export class Pgslice {
       let schemaTable: Table;
       if (settings) {
         const partitions = await destTable.partitions(tx);
-        schemaTable = partitions.length > 0 ? partitions[partitions.length - 1] : table;
+        schemaTable =
+          partitions.length > 0 ? partitions[partitions.length - 1] : table;
       } else {
         schemaTable = table;
       }
@@ -502,7 +503,9 @@ export class Pgslice {
       const finalMaxSourceId = maxSourceId ?? startingId;
       if (finalMaxSourceId === null) {
         // This should never happen based on the logic above, but TypeScript can't know that
-        throw new Error("Unexpected: maxSourceId should be defined at this point");
+        throw new Error(
+          "Unexpected: maxSourceId should be defined at this point",
+        );
       }
 
       const finalStartingId = startingId ?? comparator.minValue;

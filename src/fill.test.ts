@@ -38,7 +38,10 @@ describe("Filler", () => {
         columns,
       });
 
-      const batches: Array<{ batchNumber: number; totalBatches: number | null }> = [];
+      const batches: Array<{
+        batchNumber: number;
+        totalBatches: number | null;
+      }> = [];
       for await (const batch of filler.fill(transaction)) {
         batches.push({
           batchNumber: batch.batchNumber,
@@ -168,7 +171,10 @@ describe("Filler", () => {
         columns,
       });
 
-      const batches: Array<{ batchNumber: number; totalBatches: number | null }> = [];
+      const batches: Array<{
+        batchNumber: number;
+        totalBatches: number | null;
+      }> = [];
       for await (const batch of filler.fill(transaction)) {
         batches.push({
           batchNumber: batch.batchNumber,

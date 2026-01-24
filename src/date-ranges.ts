@@ -81,7 +81,10 @@ export function formatDateSuffix(date: Date, period: Period): string {
  * Parses a partition table name to extract the date from its suffix.
  * The suffix is expected to be the last underscore-separated component.
  */
-export function parsePartitionDate(partitionName: string, period: Period): Date {
+export function parsePartitionDate(
+  partitionName: string,
+  period: Period,
+): Date {
   const suffix = partitionName.split("_").pop();
   if (!suffix) {
     throw new Error(`Invalid partition name: ${partitionName}`);

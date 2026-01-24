@@ -90,9 +90,7 @@ describe("NumericComparator", () => {
     });
 
     it("returns 0 for non-bigint values", () => {
-      expect(
-        comparator.batchCount("0" as unknown as bigint, 100n, 10),
-      ).toBe(0);
+      expect(comparator.batchCount("0" as unknown as bigint, 100n, 10)).toBe(0);
     });
   });
 
@@ -148,9 +146,9 @@ describe("UlidComparator", () => {
           "01ARZ3NDEKTSV4RRFFQ69G5FAV",
         ),
       ).toBe(true);
-      expect(comparator.shouldContinue(DEFAULT_ULID, "01ARZ3NDEKTSV4RRFFQ69G5FAV")).toBe(
-        true,
-      );
+      expect(
+        comparator.shouldContinue(DEFAULT_ULID, "01ARZ3NDEKTSV4RRFFQ69G5FAV"),
+      ).toBe(true);
     });
 
     it("returns false when currentId >= maxId", () => {

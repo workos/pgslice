@@ -59,10 +59,10 @@ export class Filler {
    *
    * @param connection - Database connection pool or query methods
    */
-  async *fill(
-    connection: CommonQueryMethods,
-  ): AsyncGenerator<FillBatchResult> {
-    while (this.#comparator.shouldContinue(this.#currentId, this.#maxSourceId)) {
+  async *fill(connection: CommonQueryMethods): AsyncGenerator<FillBatchResult> {
+    while (
+      this.#comparator.shouldContinue(this.#currentId, this.#maxSourceId)
+    ) {
       this.#batchNumber++;
 
       const result = await this.#processBatch(connection);
@@ -72,7 +72,9 @@ export class Filler {
     }
   }
 
-  async #processBatch(connection: CommonQueryMethods): Promise<FillBatchResult> {
+  async #processBatch(
+    connection: CommonQueryMethods,
+  ): Promise<FillBatchResult> {
     const startId = this.#currentId;
 
     // Build the WHERE clause

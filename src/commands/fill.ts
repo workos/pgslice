@@ -85,7 +85,10 @@ export class FillCommand extends Command<Context> {
       }
 
       const sleepSeconds = this.sleep ? parseFloat(this.sleep) : undefined;
-      if (sleepSeconds !== undefined && (isNaN(sleepSeconds) || sleepSeconds < 0)) {
+      if (
+        sleepSeconds !== undefined &&
+        (isNaN(sleepSeconds) || sleepSeconds < 0)
+      ) {
         throw new Error("Invalid sleep value");
       }
 

@@ -31,7 +31,9 @@ describe("Table.maxId", () => {
     expect(maxId).toBeNull();
   });
 
-  test("returns max string ID from table with ULID", async ({ transaction }) => {
+  test("returns max string ID from table with ULID", async ({
+    transaction,
+  }) => {
     await transaction.query(sql.unsafe`
       CREATE TABLE test_table (id TEXT PRIMARY KEY, name TEXT)
     `);
@@ -108,7 +110,9 @@ describe("Table.minId", () => {
     expect(minId).toBeNull();
   });
 
-  test("returns min string ID from table with ULID", async ({ transaction }) => {
+  test("returns min string ID from table with ULID", async ({
+    transaction,
+  }) => {
     await transaction.query(sql.unsafe`
       CREATE TABLE test_table (id TEXT PRIMARY KEY, name TEXT)
     `);
@@ -166,7 +170,9 @@ describe("Table.createIdComparator", () => {
     expect(comparator).toBeInstanceOf(NumericComparator);
   });
 
-  test("returns UlidComparator for ULID string IDs", async ({ transaction }) => {
+  test("returns UlidComparator for ULID string IDs", async ({
+    transaction,
+  }) => {
     await transaction.query(sql.unsafe`
       CREATE TABLE test_table (id TEXT PRIMARY KEY, name TEXT)
     `);

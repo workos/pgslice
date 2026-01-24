@@ -25,7 +25,9 @@ const idValueSchema = z.union([z.bigint(), z.number(), z.string()]).nullable();
  * Transforms a raw ID value from the database into the proper IdValue type.
  * Numbers and numeric strings become bigint, ULID strings stay as strings.
  */
-function transformIdValue(val: bigint | number | string | null): IdValue | null {
+function transformIdValue(
+  val: bigint | number | string | null,
+): IdValue | null {
   if (val === null) {
     return null;
   }
