@@ -1,4 +1,6 @@
 import { Command, Option, type Usage } from "clipanion";
+import * as t from "typanion";
+
 import { Pgslice } from "../pgslice.js";
 import { BaseCommand } from "./base.js";
 
@@ -36,6 +38,7 @@ export class FillCommand extends BaseCommand {
 
   batchSize = Option.String("--batch-size", "10000", {
     description: "Number of rows to process per batch",
+    validator: t.cascade(t.isNumber(), [t.isAtLeast(1)]),
   });
 
   swapped = Option.Boolean("--swapped", false, {
@@ -56,37 +59,17 @@ export class FillCommand extends BaseCommand {
 
   sleep = Option.String("--sleep", {
     description: "Seconds to sleep between batches",
+    validator: t.cascade(t.isNumber(), [t.isPositive()]),
   });
 
-  protected getDatabaseUrl(): string {
-    const url = this.url ?? process.env.PGSLICE_URL;
-    if (!url) {
-      throw new Error("Set PGSLICE_URL or use the --url option");
-    }
-    return url;
-  }
-
   async perform(pgslice: Pgslice) {
-    const batchSize = parseInt(this.batchSize, 10);
-    if (isNaN(batchSize) || batchSize <= 0) {
-      throw new Error("Invalid batch size");
-    }
-
-    const sleepSeconds = this.sleep ? parseFloat(this.sleep) : undefined;
-    if (
-      sleepSeconds !== undefined &&
-      (isNaN(sleepSeconds) || sleepSeconds < 0)
-    ) {
-      throw new Error("Invalid sleep value");
-    }
-
     let hasBatches = false;
     for await (const batch of pgslice.fill({
       table: this.table,
       swapped: this.swapped,
       sourceTable: this.sourceTable,
       destTable: this.destTable,
-      batchSize,
+      batchSize: this.batchSize,
       start: this.start,
     })) {
       hasBatches = true;
@@ -100,8 +83,8 @@ export class FillCommand extends BaseCommand {
       this.context.stdout.write(`/* ${batchLabel} */\n`);
 
       // Sleep between batches if requested
-      if (sleepSeconds !== undefined && sleepSeconds > 0) {
-        await this.#sleep(sleepSeconds * 1000);
+      if (this.sleep) {
+        await this.#sleep();
       }
     }
 
@@ -110,7 +93,7 @@ export class FillCommand extends BaseCommand {
     }
   }
 
-  #sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  #sleep(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, this.sleep));
   }
 }

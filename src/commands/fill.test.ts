@@ -6,80 +6,71 @@ import { commandTest as test } from "../testing/index.js";
 import { FillCommand } from "./fill.js";
 
 describe("FillCommand", () => {
+  test.scoped({ commandClass: ({}, use) => use(FillCommand) });
+
   describe("validation errors", () => {
     test("returns error when batch size is not a number", async ({
+      cli,
       commandContext,
     }) => {
-      const command = new FillCommand();
-      command.context = commandContext;
-      command.table = "posts";
-      command.batchSize = "abc";
-
-      const exitCode = await command.execute();
+      const exitCode = await cli.run(
+        ["fill", "posts", "--batch-size", "abc"],
+        commandContext,
+      );
 
       expect(exitCode).toBe(1);
-      const output = (commandContext.stderr as PassThrough).read()?.toString();
-      expect(output).toContain("Invalid batch size");
+      const output = commandContext.stdout.read()?.toString();
+      expect(output).toContain(
+        'Invalid value for --batch-size: expected a number (got "abc")',
+      );
     });
 
-    test("returns error when batch size is zero", async ({ commandContext }) => {
-      const command = new FillCommand();
-      command.context = commandContext;
-      command.table = "posts";
-      command.batchSize = "0";
-
-      const exitCode = await command.execute();
-
-      expect(exitCode).toBe(1);
-      const output = (commandContext.stderr as PassThrough).read()?.toString();
-      expect(output).toContain("Invalid batch size");
-    });
-
-    test("returns error when batch size is negative", async ({
+    test("returns error when batch size is zero", async ({
       commandContext,
+      cli,
     }) => {
-      const command = new FillCommand();
-      command.context = commandContext;
-      command.table = "posts";
-      command.batchSize = "-1";
-
-      const exitCode = await command.execute();
+      const exitCode = await cli.run(
+        ["fill", "posts", "--batch-size", "0"],
+        commandContext,
+      );
 
       expect(exitCode).toBe(1);
-      const output = (commandContext.stderr as PassThrough).read()?.toString();
-      expect(output).toContain("Invalid batch size");
+      const output = commandContext.stdout.read()?.toString();
+      expect(output).toContain(
+        "Invalid value for --batch-size: expected to be at least 1 (got 0)",
+      );
     });
 
     test("returns error when sleep value is not a number", async ({
+      cli,
       commandContext,
     }) => {
-      const command = new FillCommand();
-      command.context = commandContext;
-      command.table = "posts";
-      command.batchSize = "10000";
-      command.sleep = "abc";
-
-      const exitCode = await command.execute();
+      const exitCode = await cli.run(
+        ["fill", "posts", "--batch-size", "10000", "--sleep", "abc"],
+        commandContext,
+      );
 
       expect(exitCode).toBe(1);
-      const output = (commandContext.stderr as PassThrough).read()?.toString();
-      expect(output).toContain("Invalid sleep value");
+      const output = commandContext.stdout.read()?.toString();
+      expect(output).toContain(
+        'Invalid value for --sleep: expected a number (got "abc")',
+      );
     });
 
     test("returns error when sleep value is negative", async ({
+      cli,
       commandContext,
     }) => {
-      const command = new FillCommand();
-      command.context = commandContext;
-      command.table = "posts";
-      command.batchSize = "10000";
-      command.sleep = "-1";
-
-      const exitCode = await command.execute();
+      const exitCode = await cli.run(
+        ["fill", "posts", "--batch-size", "10000", "--sleep=-1"],
+        commandContext,
+      );
 
       expect(exitCode).toBe(1);
-      const output = (commandContext.stderr as PassThrough).read()?.toString();
-      expect(output).toContain("Invalid sleep value");
+      const output = (commandContext.stdout as PassThrough).read()?.toString();
+      expect(output).toContain(
+        "Invalid value for --sleep: expected to be positive (got -1)",
+      );
     });
   });
 
@@ -114,7 +105,11 @@ describe("FillCommand", () => {
       `);
     });
 
-    test("outputs batch progress", async ({ commandContext, transaction }) => {
+    test("outputs batch progress", async ({
+      cli,
+      commandContext,
+      transaction,
+    }) => {
       // Insert 15 rows to have 2 batches with batch size of 10
       await transaction.query(sql.unsafe`
         INSERT INTO posts (created_at)
@@ -122,19 +117,13 @@ describe("FillCommand", () => {
         FROM generate_series(1, 15)
       `);
 
-      const command = new FillCommand();
-      command.context = commandContext;
-      command.table = "posts";
-      command.batchSize = "10";
-      command.swapped = false;
-      command.sourceTable = undefined;
-      command.destTable = undefined;
-      command.start = undefined;
-      command.sleep = undefined;
+      const exitCode = await cli.run(
+        ["fill", "posts", "--batch-size", "10"],
+        commandContext,
+      );
 
-      await command.execute();
-
-      const output = (commandContext.stdout as PassThrough).read()?.toString();
+      expect(expect(exitCode).toBe(0));
+      const output = commandContext.stdout.read()?.toString();
       expect(output).toBeDefined();
       expect(output).toContain("/* 1 of 2 */");
       expect(output).toContain("/* 2 of 2 */");
@@ -142,20 +131,12 @@ describe("FillCommand", () => {
 
     test("outputs nothing to fill when source is empty", async ({
       commandContext,
+      cli,
     }) => {
-      const command = new FillCommand();
-      command.context = commandContext;
-      command.table = "posts";
-      command.batchSize = "10000";
-      command.swapped = false;
-      command.sourceTable = undefined;
-      command.destTable = undefined;
-      command.start = undefined;
-      command.sleep = undefined;
+      const exitCode = await cli.run(["fill", "posts"], commandContext);
 
-      await command.execute();
-
-      const output = (commandContext.stdout as PassThrough).read()?.toString();
+      expect(exitCode).toBe(0);
+      const output = commandContext.stdout.read()?.toString();
       expect(output).toBeDefined();
       expect(output).toContain("/* nothing to fill */");
     });
@@ -193,6 +174,7 @@ describe("FillCommand", () => {
     });
 
     test("outputs batch N without total for ULID-based tables", async ({
+      cli,
       commandContext,
       transaction,
     }) => {
@@ -204,20 +186,13 @@ describe("FillCommand", () => {
         ('01HQ1234567890ABCDEFGHJ003', '2025-01-15')
       `);
 
-      const command = new FillCommand();
-      command.context = commandContext;
-      command.table = "events";
-      command.batchSize = "2";
-      command.swapped = false;
-      command.sourceTable = undefined;
-      command.destTable = undefined;
-      command.start = undefined;
-      command.sleep = undefined;
+      const exitCode = await cli.run(
+        ["fill", "events", "--batch-size", "2"],
+        commandContext,
+      );
 
-      await command.execute();
-
-      const output = (commandContext.stdout as PassThrough).read()?.toString();
-      expect(output).toBeDefined();
+      expect(expect(exitCode).toBe(0));
+      const output = commandContext.stdout.read()?.toString();
       // ULID batches show "batch N" without total
       expect(output).toContain("/* batch 1 */");
       expect(output).toContain("/* batch 2 */");
@@ -256,6 +231,7 @@ describe("FillCommand", () => {
     });
 
     test("completes with sleep option set", async ({
+      cli,
       commandContext,
       transaction,
     }) => {
@@ -266,17 +242,10 @@ describe("FillCommand", () => {
         FROM generate_series(1, 5)
       `);
 
-      const command = new FillCommand();
-      command.context = commandContext;
-      command.table = "posts";
-      command.batchSize = "3";
-      command.swapped = false;
-      command.sourceTable = undefined;
-      command.destTable = undefined;
-      command.start = undefined;
-      command.sleep = "0.001"; // 1ms sleep - small enough to not slow tests
-
-      await command.execute();
+      await cli.run(
+        ["fill", "posts", "--batch-size", "3", "--sleep", "0.001"],
+        commandContext,
+      );
 
       const output = (commandContext.stdout as PassThrough).read()?.toString();
       expect(output).toBeDefined();
