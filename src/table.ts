@@ -304,7 +304,7 @@ export class Table {
     tx: CommonQueryMethods,
     primaryKeyColumn: string,
     hint?: string,
-  ): Promise<IdComparator> {
+  ): Promise<IdComparator<string | bigint>> {
     // If hint provided (from --start), determine type from hint
     if (hint !== undefined) {
       if (isUlid(hint)) {

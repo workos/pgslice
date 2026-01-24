@@ -47,12 +47,6 @@ describe("NumericComparator", () => {
       expect(comparator.predecessor(1n)).toBe(0n);
       expect(comparator.predecessor(100n)).toBe(99n);
     });
-
-    it("throws for non-bigint values", () => {
-      expect(() => comparator.predecessor("123" as unknown as bigint)).toThrow(
-        "NumericComparator requires bigint IDs",
-      );
-    });
   });
 
   describe("shouldContinue", () => {
@@ -64,15 +58,6 @@ describe("NumericComparator", () => {
     it("returns false when currentId >= maxId", () => {
       expect(comparator.shouldContinue(10n, 10n)).toBe(false);
       expect(comparator.shouldContinue(11n, 10n)).toBe(false);
-    });
-
-    it("returns false for non-bigint values", () => {
-      expect(comparator.shouldContinue("5" as unknown as bigint, 10n)).toBe(
-        false,
-      );
-      expect(comparator.shouldContinue(5n, "10" as unknown as bigint)).toBe(
-        false,
-      );
     });
   });
 
@@ -88,10 +73,6 @@ describe("NumericComparator", () => {
       expect(comparator.batchCount(100n, 100n, 10)).toBe(0);
       expect(comparator.batchCount(100n, 50n, 10)).toBe(0);
     });
-
-    it("returns 0 for non-bigint values", () => {
-      expect(comparator.batchCount("0" as unknown as bigint, 100n, 10)).toBe(0);
-    });
   });
 
   describe("batchWhereCondition", () => {
@@ -105,12 +86,6 @@ describe("NumericComparator", () => {
       const fragment = comparator.batchWhereCondition(10n, 5, true);
       // The fragment should generate: "id" >= 10 AND "id" <= 15
       expect(fragment).toBeDefined();
-    });
-
-    it("throws for non-bigint values", () => {
-      expect(() =>
-        comparator.batchWhereCondition("10" as unknown as bigint, 5, false),
-      ).toThrow("NumericComparator requires bigint IDs");
     });
   });
 
@@ -165,12 +140,6 @@ describe("UlidComparator", () => {
         ),
       ).toBe(false);
     });
-
-    it("returns false for non-string values", () => {
-      expect(comparator.shouldContinue(5n as unknown as string, "test")).toBe(
-        false,
-      );
-    });
   });
 
   describe("batchCount", () => {
@@ -202,12 +171,6 @@ describe("UlidComparator", () => {
         true,
       );
       expect(fragment).toBeDefined();
-    });
-
-    it("throws for non-string values", () => {
-      expect(() =>
-        comparator.batchWhereCondition(10n as unknown as string, 100, false),
-      ).toThrow("UlidComparator requires string IDs");
     });
   });
 

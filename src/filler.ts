@@ -8,7 +8,7 @@ import { formatDateForSql } from "./sql-utils.js";
 export interface FillerOptions {
   source: Table;
   dest: Table;
-  comparator: IdComparator;
+  comparator: IdComparator<string | bigint>;
   batchSize: number;
   startingId: IdValue;
   maxSourceId: IdValue;
@@ -25,7 +25,7 @@ export interface FillerOptions {
 export class Filler {
   readonly #source: Table;
   readonly #dest: Table;
-  readonly #comparator: IdComparator;
+  readonly #comparator: IdComparator<string | bigint>;
   readonly #batchSize: number;
   readonly #maxSourceId: IdValue;
   readonly #columns: string[];
