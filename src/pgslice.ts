@@ -11,14 +11,20 @@ import type {
   AddPartitionsOptions,
   DisableMirroringOptions,
   EnableMirroringOptions,
+  FillBatchResult,
+  FillOptions,
+  IdValue,
   Period,
   PrepOptions,
+  TimeFilter,
 } from "./types.js";
 import { isPeriod } from "./types.js";
 import { Table, getServerVersionNum } from "./table.js";
-import { DateRanges } from "./date-ranges.js";
+import { DateRanges, advanceDate, parsePartitionDate } from "./date-ranges.js";
 import { rawSql } from "./sql-utils.js";
 import { Mirroring } from "./mirroring.js";
+import { Filler } from "./filler.js";
+import { isUlid } from "./id-comparator.js";
 
 interface PgsliceOptions {
   dryRun?: boolean;
@@ -331,6 +337,223 @@ export class Pgslice {
     }
 
     await new Mirroring({ source: table, target: intermediate }).disable(tx);
+  }
+
+  /**
+   * Fills the destination table from the source table in batches.
+   * Each batch runs in its own transaction to allow resumable progress.
+   *
+   * @param options - Fill options including table names and batch configuration
+   * @yields FillBatchResult after each batch is processed
+   */
+  async *fill(options: FillOptions): AsyncGenerator<FillBatchResult> {
+    if (!this.#connection) {
+      throw new Error("Not connected to the database");
+    }
+
+    const table = Table.parse(options.table);
+
+    // Resolve source and dest tables based on options
+    let sourceTable: Table;
+    let destTable: Table;
+
+    if (options.sourceTable) {
+      sourceTable = Table.parse(options.sourceTable);
+    } else if (options.swapped) {
+      sourceTable = table.retired();
+    } else {
+      sourceTable = table;
+    }
+
+    if (options.destTable) {
+      destTable = Table.parse(options.destTable);
+    } else if (options.swapped) {
+      destTable = table;
+    } else {
+      destTable = table.intermediate();
+    }
+
+    // Use a transaction for the initial setup/metadata reads
+    const setupResult = await this.#connection.transaction(async (tx) => {
+      // Verify tables exist
+      if (!(await sourceTable.exists(tx))) {
+        throw new Error(`Table not found: ${sourceTable.toString()}`);
+      }
+      if (!(await destTable.exists(tx))) {
+        throw new Error(`Table not found: ${destTable.toString()}`);
+      }
+
+      // Get partition settings from dest table for time filtering
+      const settings = await destTable.fetchSettings(tx);
+
+      // Determine time filter if dest is partitioned
+      let timeFilter: TimeFilter | undefined;
+      if (settings) {
+        const partitions = await destTable.partitions(tx);
+        if (partitions.length > 0) {
+          const firstPartition = partitions[0];
+          const lastPartition = partitions[partitions.length - 1];
+
+          const startingTime = parsePartitionDate(
+            firstPartition.name,
+            settings.period,
+          );
+          const lastPartitionDate = parsePartitionDate(
+            lastPartition.name,
+            settings.period,
+          );
+          const endingTime = advanceDate(lastPartitionDate, settings.period, 1);
+
+          timeFilter = {
+            column: settings.column,
+            cast: settings.cast,
+            startingTime,
+            endingTime,
+          };
+        }
+      }
+
+      // Determine which table to get the schema (columns, primary key) from
+      let schemaTable: Table;
+      if (settings) {
+        const partitions = await destTable.partitions(tx);
+        schemaTable = partitions.length > 0 ? partitions[partitions.length - 1] : table;
+      } else {
+        schemaTable = table;
+      }
+
+      // Get primary key
+      const primaryKeyColumns = await schemaTable.primaryKey(tx);
+      if (primaryKeyColumns.length === 0) {
+        throw new Error("No primary key");
+      }
+      const primaryKeyColumn = primaryKeyColumns[0];
+
+      // Get columns from source table
+      const columns = await sourceTable.columns(tx);
+
+      // Get max source ID
+      let maxSourceId: IdValue | null;
+      try {
+        maxSourceId = await sourceTable.maxId(tx, primaryKeyColumn);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes("UndefinedFunction")
+        ) {
+          throw new Error("Only numeric and ULID primary keys are supported");
+        }
+        throw error;
+      }
+
+      // Determine starting ID
+      let startingId: IdValue | null;
+      let includeStart = false;
+
+      if (options.start !== undefined) {
+        // Use the provided start value
+        includeStart = true;
+        if (isUlid(options.start)) {
+          startingId = options.start;
+        } else {
+          startingId = BigInt(options.start);
+        }
+      } else if (options.swapped) {
+        // Get max from dest where id <= maxSourceId
+        startingId = await destTable.maxId(tx, primaryKeyColumn, {
+          below: maxSourceId ?? undefined,
+        });
+      } else {
+        // Get max from dest
+        startingId = await destTable.maxId(tx, primaryKeyColumn);
+      }
+
+      // Handle case where dest is empty and not swapped
+      const comparator = await sourceTable.createIdComparator(
+        tx,
+        primaryKeyColumn,
+        options.start,
+      );
+
+      if (
+        (startingId === null ||
+          startingId === comparator.minValue ||
+          startingId === 0n) &&
+        !options.swapped
+      ) {
+        const minSourceId = await sourceTable.minId(tx, primaryKeyColumn, {
+          column: timeFilter?.column,
+          cast: timeFilter?.cast,
+          startingTime: timeFilter?.startingTime,
+        });
+
+        if (minSourceId !== null) {
+          startingId = comparator.predecessor(minSourceId);
+        }
+      }
+
+      // If still no max source ID and no start option, nothing to fill
+      if (maxSourceId === null && options.start === undefined) {
+        return null;
+      }
+
+      // At this point, either maxSourceId is not null, or options.start was provided
+      // (which means startingId is also not null).
+      const finalMaxSourceId = maxSourceId ?? startingId;
+      if (finalMaxSourceId === null) {
+        // This should never happen based on the logic above, but TypeScript can't know that
+        throw new Error("Unexpected: maxSourceId should be defined at this point");
+      }
+
+      const finalStartingId = startingId ?? comparator.minValue;
+
+      return {
+        sourceTable,
+        destTable,
+        primaryKeyColumn,
+        columns,
+        maxSourceId: finalMaxSourceId,
+        startingId: finalStartingId,
+        comparator,
+        timeFilter,
+        includeStart,
+      };
+    });
+
+    // Nothing to fill
+    if (setupResult === null) {
+      return;
+    }
+
+    const batchSize = options.batchSize ?? 10000;
+    const batchCount = setupResult.comparator.batchCount(
+      setupResult.startingId,
+      setupResult.maxSourceId,
+      batchSize,
+    );
+
+    // If numeric and batch count is 0, nothing to fill
+    if (batchCount === 0) {
+      return;
+    }
+
+    // Create the filler
+    const filler = new Filler({
+      source: setupResult.sourceTable,
+      dest: setupResult.destTable,
+      comparator: setupResult.comparator,
+      batchSize,
+      startingId: setupResult.startingId,
+      maxSourceId: setupResult.maxSourceId,
+      includeStart: setupResult.includeStart,
+      columns: setupResult.columns,
+      timeFilter: setupResult.timeFilter,
+    });
+
+    // Process batches - each batch in its own transaction
+    for await (const batch of filler.fill(this.#connection)) {
+      yield batch;
+    }
   }
 }
 

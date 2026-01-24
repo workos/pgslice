@@ -1,7 +1,46 @@
-import { DatabaseTransactionConnection, sql, IdentifierSqlToken } from "slonik";
+import {
+  CommonQueryMethods,
+  DatabaseTransactionConnection,
+  sql,
+  IdentifierSqlToken,
+} from "slonik";
 import { z } from "zod";
-import type { Cast } from "./types.js";
+import type { Cast, IdValue } from "./types.js";
 import { TableSettings } from "./table-settings.js";
+import {
+  IdComparator,
+  NumericComparator,
+  UlidComparator,
+  isUlid,
+} from "./id-comparator.js";
+
+/**
+ * Zod schema for validating ID values from the database.
+ * Note: slonik's sql.type() does NOT run zod transforms, so we use
+ * a simple schema here and transform manually in the query methods.
+ */
+const idValueSchema = z.union([z.bigint(), z.number(), z.string()]).nullable();
+
+/**
+ * Transforms a raw ID value from the database into the proper IdValue type.
+ * Numbers and numeric strings become bigint, ULID strings stay as strings.
+ */
+function transformIdValue(val: bigint | number | string | null): IdValue | null {
+  if (val === null) {
+    return null;
+  }
+  if (typeof val === "bigint") {
+    return val;
+  }
+  if (typeof val === "number") {
+    return BigInt(val);
+  }
+  // val is string - check if it's a numeric string or ULID
+  if (/^\d+$/.test(val)) {
+    return BigInt(val);
+  }
+  return val;
+}
 
 const DEFAULT_SCHEMA = "public";
 
@@ -250,4 +289,125 @@ export class Table {
 
     return TableSettings.parseFromComment(result.comment);
   }
+
+  /**
+   * Creates an IdComparator appropriate for this table's primary key type.
+   *
+   * @param tx - Database connection
+   * @param primaryKeyColumn - The name of the primary key column
+   * @param hint - Optional hint value from --start option to determine ID type
+   */
+  async createIdComparator(
+    tx: CommonQueryMethods,
+    primaryKeyColumn: string,
+    hint?: string,
+  ): Promise<IdComparator> {
+    // If hint provided (from --start), determine type from hint
+    if (hint !== undefined) {
+      if (isUlid(hint)) {
+        return new UlidComparator(primaryKeyColumn);
+      }
+      return new NumericComparator(primaryKeyColumn);
+    }
+
+    // Sample a row to detect the ID type
+    const result = await tx.maybeOne(
+      sql.type(z.object({ id: idValueSchema }))`
+        SELECT ${sql.identifier([primaryKeyColumn])} AS id
+        FROM ${this.toSqlIdentifier()}
+        LIMIT 1
+      `,
+    );
+
+    if (result === null || result.id === null) {
+      // Empty table, default to numeric
+      return new NumericComparator(primaryKeyColumn);
+    }
+
+    // Transform the ID and check its type
+    const transformedId = transformIdValue(result.id);
+    if (typeof transformedId === "string" && isUlid(transformedId)) {
+      return new UlidComparator(primaryKeyColumn);
+    }
+
+    return new NumericComparator(primaryKeyColumn);
+  }
+
+  /**
+   * Gets the maximum ID value for the primary key column.
+   *
+   * @param tx - Database connection
+   * @param primaryKeyColumn - The name of the primary key column
+   * @param options - Optional filtering options
+   * @param options.below - Only consider IDs below this value
+   */
+  async maxId(
+    tx: CommonQueryMethods,
+    primaryKeyColumn: string,
+    options?: { below?: IdValue },
+  ): Promise<IdValue | null> {
+    const col = sql.identifier([primaryKeyColumn]);
+
+    let whereClause = sql.fragment`1 = 1`;
+    if (options?.below !== undefined) {
+      whereClause = sql.fragment`${col} <= ${options.below}`;
+    }
+
+    const result = await tx.maybeOne(
+      sql.type(z.object({ max_id: idValueSchema }))`
+        SELECT MAX(${col}) AS max_id
+        FROM ${this.toSqlIdentifier()}
+        WHERE ${whereClause}
+      `,
+    );
+
+    return transformIdValue(result?.max_id ?? null);
+  }
+
+  /**
+   * Gets the minimum ID value for the primary key column.
+   *
+   * @param tx - Database connection
+   * @param primaryKeyColumn - The name of the primary key column
+   * @param options - Optional time filtering options for partitioned tables
+   */
+  async minId(
+    tx: CommonQueryMethods,
+    primaryKeyColumn: string,
+    options?: {
+      column?: string;
+      cast?: Cast;
+      startingTime?: Date;
+    },
+  ): Promise<IdValue | null> {
+    const col = sql.identifier([primaryKeyColumn]);
+
+    let whereClause = sql.fragment`1 = 1`;
+    if (options?.column && options.cast && options.startingTime) {
+      const timeCol = sql.identifier([options.column]);
+      const startDate = formatDateForSql(options.startingTime, options.cast);
+      whereClause = sql.fragment`${timeCol} >= ${startDate}`;
+    }
+
+    const result = await tx.maybeOne(
+      sql.type(z.object({ min_id: idValueSchema }))`
+        SELECT MIN(${col}) AS min_id
+        FROM ${this.toSqlIdentifier()}
+        WHERE ${whereClause}
+      `,
+    );
+
+    return transformIdValue(result?.min_id ?? null);
+  }
+}
+
+function formatDateForSql(date: Date, cast: Cast) {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+
+  if (cast === "timestamptz") {
+    return sql.literalValue(`${year}-${month}-${day} 00:00:00 UTC`);
+  }
+  return sql.literalValue(`${year}-${month}-${day}`);
 }

@@ -78,6 +78,38 @@ export function formatDateSuffix(date: Date, period: Period): string {
 }
 
 /**
+ * Parses a partition table name to extract the date from its suffix.
+ * The suffix is expected to be the last underscore-separated component.
+ */
+export function parsePartitionDate(partitionName: string, period: Period): Date {
+  const suffix = partitionName.split("_").pop();
+  if (!suffix) {
+    throw new Error(`Invalid partition name: ${partitionName}`);
+  }
+
+  switch (period) {
+    case "day": {
+      // Format: YYYYMMDD
+      const year = parseInt(suffix.slice(0, 4), 10);
+      const month = parseInt(suffix.slice(4, 6), 10) - 1;
+      const day = parseInt(suffix.slice(6, 8), 10);
+      return new Date(Date.UTC(year, month, day));
+    }
+    case "month": {
+      // Format: YYYYMM
+      const year = parseInt(suffix.slice(0, 4), 10);
+      const month = parseInt(suffix.slice(4, 6), 10) - 1;
+      return new Date(Date.UTC(year, month, 1));
+    }
+    case "year": {
+      // Format: YYYY
+      const year = parseInt(suffix, 10);
+      return new Date(Date.UTC(year, 0, 1));
+    }
+  }
+}
+
+/**
  * An iterable that generates date ranges for partitions.
  */
 export class DateRanges implements Iterable<DateRange> {

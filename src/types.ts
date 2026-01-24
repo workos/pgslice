@@ -69,3 +69,41 @@ export interface EnableMirroringOptions {
 export interface DisableMirroringOptions {
   table: string;
 }
+
+/**
+ * Represents a primary key value that can be either numeric (bigint) or string (ULID).
+ */
+export type IdValue = bigint | string;
+
+/**
+ * Time filter configuration for partitioned tables during fill.
+ */
+export interface TimeFilter {
+  column: string;
+  cast: Cast;
+  startingTime: Date;
+  endingTime: Date;
+}
+
+/**
+ * Options for the `fill` command.
+ */
+export interface FillOptions {
+  table: string;
+  swapped?: boolean;
+  sourceTable?: string;
+  destTable?: string;
+  batchSize?: number;
+  start?: string;
+}
+
+/**
+ * Result of a single fill batch operation.
+ */
+export interface FillBatchResult {
+  batchNumber: number;
+  totalBatches: number | null;
+  rowsInserted: number;
+  startId: IdValue;
+  endId: IdValue;
+}
