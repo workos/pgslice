@@ -22,7 +22,7 @@ import type {
 import { isPeriod } from "./types.js";
 import { Table, getServerVersionNum } from "./table.js";
 import { DateRanges, advanceDate, parsePartitionDate } from "./date-ranges.js";
-import { rawSql } from "./sql-utils.js";
+import { formatDateForSql, rawSql } from "./sql-utils.js";
 import { Mirroring } from "./mirroring.js";
 import { Filler } from "./filler.js";
 import { isUlid } from "./id-comparator.js";
@@ -560,13 +560,3 @@ export class Pgslice {
   }
 }
 
-function formatDateForSql(date: Date, cast: "date" | "timestamptz") {
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(date.getUTCDate()).padStart(2, "0");
-
-  if (cast === "timestamptz") {
-    return sql.literalValue(`${year}-${month}-${day} 00:00:00 UTC`);
-  }
-  return sql.literalValue(`${year}-${month}-${day}`);
-}

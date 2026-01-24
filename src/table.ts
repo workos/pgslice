@@ -13,6 +13,7 @@ import {
   UlidComparator,
   isUlid,
 } from "./id-comparator.js";
+import { formatDateForSql } from "./sql-utils.js";
 
 /**
  * Zod schema for validating ID values from the database.
@@ -401,15 +402,4 @@ export class Table {
 
     return transformIdValue(result?.min_id ?? null);
   }
-}
-
-function formatDateForSql(date: Date, cast: Cast) {
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(date.getUTCDate()).padStart(2, "0");
-
-  if (cast === "timestamptz") {
-    return sql.literalValue(`${year}-${month}-${day} 00:00:00 UTC`);
-  }
-  return sql.literalValue(`${year}-${month}-${day}`);
 }

@@ -2,7 +2,8 @@ import { CommonQueryMethods, sql } from "slonik";
 import { z } from "zod";
 import type { Table } from "./table.js";
 import type { IdComparator } from "./id-comparator.js";
-import type { Cast, FillBatchResult, IdValue, TimeFilter } from "./types.js";
+import type { FillBatchResult, IdValue, TimeFilter } from "./types.js";
+import { formatDateForSql } from "./sql-utils.js";
 
 export interface FillerOptions {
   source: Table;
@@ -138,26 +139,9 @@ export class Filler {
 
   #buildTimeFilterClause(timeFilter: TimeFilter) {
     const timeCol = sql.identifier([timeFilter.column]);
-    const startDate = this.#formatDateForSql(
-      timeFilter.startingTime,
-      timeFilter.cast,
-    );
-    const endDate = this.#formatDateForSql(
-      timeFilter.endingTime,
-      timeFilter.cast,
-    );
+    const startDate = formatDateForSql(timeFilter.startingTime, timeFilter.cast);
+    const endDate = formatDateForSql(timeFilter.endingTime, timeFilter.cast);
 
     return sql.fragment`${timeCol} >= ${startDate} AND ${timeCol} < ${endDate}`;
-  }
-
-  #formatDateForSql(date: Date, cast: Cast) {
-    const year = date.getUTCFullYear();
-    const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-    const day = String(date.getUTCDate()).padStart(2, "0");
-
-    if (cast === "timestamptz") {
-      return sql.literalValue(`${year}-${month}-${day} 00:00:00 UTC`);
-    }
-    return sql.literalValue(`${year}-${month}-${day}`);
   }
 }
