@@ -66,8 +66,7 @@ export class Filler {
     ) {
       this.#batchNumber++;
 
-      const result = await this.#processBatch(connection);
-      yield result;
+      yield await this.#processBatch(connection);
 
       this.#includeStart = false;
     }
