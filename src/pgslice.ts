@@ -2,6 +2,7 @@ import {
   CommonQueryMethods,
   createPool,
   DatabaseTransactionConnection,
+  SlonikError,
   sql,
   type DatabasePool,
 } from "slonik";
@@ -438,7 +439,7 @@ export class Pgslice {
         maxSourceId = await sourceTable.maxId(tx, primaryKeyColumn);
       } catch (error) {
         if (
-          error instanceof Error &&
+          error instanceof SlonikError &&
           error.message.includes("UndefinedFunction")
         ) {
           throw new Error("Only numeric and ULID primary keys are supported");
