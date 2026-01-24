@@ -31,6 +31,7 @@ interface PgsliceOptions {
 }
 
 export class Pgslice {
+  #connection: DatabasePool | CommonQueryMethods | null = null;
   #dryRun: boolean;
 
   constructor(
@@ -50,20 +51,22 @@ export class Pgslice {
     return instance;
   }
 
-  #connection: DatabasePool | CommonQueryMethods | null = null;
-
-  async start<T>(
-    handler: (transaction: DatabaseTransactionConnection) => Promise<T>,
-  ): Promise<T> {
+  private get connection() {
     if (!this.#connection) {
       throw new Error("Not connected to the database");
     }
 
+    return this.#connection;
+  }
+
+  async start<T>(
+    handler: (transaction: DatabaseTransactionConnection) => Promise<T>,
+  ): Promise<T> {
     if (this.#dryRun) {
       throw new Error("Dry run not yet supported.");
     }
 
-    return this.#connection.transaction(handler);
+    return this.connection.transaction(handler);
   }
 
   async close(): Promise<void> {
@@ -347,10 +350,6 @@ export class Pgslice {
    * @yields FillBatchResult after each batch is processed
    */
   async *fill(options: FillOptions): AsyncGenerator<FillBatchResult> {
-    if (!this.#connection) {
-      throw new Error("Not connected to the database");
-    }
-
     const table = Table.parse(options.table);
 
     // Resolve source and dest tables based on options
@@ -374,7 +373,7 @@ export class Pgslice {
     }
 
     // Use a transaction for the initial setup/metadata reads
-    const setupResult = await this.#connection.transaction(async (tx) => {
+    const setupResult = await this.start(async (tx) => {
       // Verify tables exist
       if (!(await sourceTable.exists(tx))) {
         throw new Error(`Table not found: ${sourceTable.toString()}`);
@@ -554,7 +553,7 @@ export class Pgslice {
     });
 
     // Process batches - each batch in its own transaction
-    for await (const batch of filler.fill(this.#connection)) {
+    for await (const batch of filler.fill(this.connection)) {
       yield batch;
     }
   }
