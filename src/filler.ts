@@ -139,7 +139,10 @@ export class Filler {
 
   #buildTimeFilterClause(timeFilter: TimeFilter) {
     const timeCol = sql.identifier([timeFilter.column]);
-    const startDate = formatDateForSql(timeFilter.startingTime, timeFilter.cast);
+    const startDate = formatDateForSql(
+      timeFilter.startingTime,
+      timeFilter.cast,
+    );
     const endDate = formatDateForSql(timeFilter.endingTime, timeFilter.cast);
 
     return sql.fragment`${timeCol} >= ${startDate} AND ${timeCol} < ${endDate}`;

@@ -559,4 +559,3 @@ export class Pgslice {
     }
   }
 }
-
