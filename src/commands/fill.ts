@@ -1,15 +1,11 @@
 import { Command, Option, type Usage } from "clipanion";
 import { Pgslice } from "../pgslice.js";
-import type { Context } from "./base.js";
+import { BaseCommand } from "./base.js";
 
 /**
  * Fill command for copying data from a source table to a destination table in batches.
- *
- * Unlike other commands, this does NOT extend BaseCommand because it needs
- * per-batch transactions rather than one long transaction for potentially
- * millions of rows.
  */
-export class FillCommand extends Command<Context> {
+export class FillCommand extends BaseCommand {
   static override paths = [["fill"]];
 
   static override usage: Usage = Command.Usage({
@@ -34,11 +30,6 @@ export class FillCommand extends Command<Context> {
       ["Resume from a specific ID", "$0 fill posts --start 12345"],
       ["Fill with sleep between batches", "$0 fill posts --sleep 0.5"],
     ],
-  });
-
-  url = Option.String("--url", {
-    description: "Database connection URL (default: PGSLICE_URL env var)",
-    required: false,
   });
 
   table = Option.String({ required: true, name: "table" });
@@ -75,60 +66,47 @@ export class FillCommand extends Command<Context> {
     return url;
   }
 
-  async execute(): Promise<number | void> {
-    const pgslice = await Pgslice.connect(new URL(this.getDatabaseUrl()));
+  async perform(pgslice: Pgslice) {
+    const batchSize = parseInt(this.batchSize, 10);
+    if (isNaN(batchSize) || batchSize <= 0) {
+      throw new Error("Invalid batch size");
+    }
 
-    try {
-      const batchSize = parseInt(this.batchSize, 10);
-      if (isNaN(batchSize) || batchSize <= 0) {
-        throw new Error("Invalid batch size");
+    const sleepSeconds = this.sleep ? parseFloat(this.sleep) : undefined;
+    if (
+      sleepSeconds !== undefined &&
+      (isNaN(sleepSeconds) || sleepSeconds < 0)
+    ) {
+      throw new Error("Invalid sleep value");
+    }
+
+    let hasBatches = false;
+    for await (const batch of pgslice.fill({
+      table: this.table,
+      swapped: this.swapped,
+      sourceTable: this.sourceTable,
+      destTable: this.destTable,
+      batchSize,
+      start: this.start,
+    })) {
+      hasBatches = true;
+
+      // Format progress message
+      const batchLabel =
+        batch.totalBatches !== null
+          ? `${batch.batchNumber} of ${batch.totalBatches}`
+          : `batch ${batch.batchNumber}`;
+
+      this.context.stdout.write(`/* ${batchLabel} */\n`);
+
+      // Sleep between batches if requested
+      if (sleepSeconds !== undefined && sleepSeconds > 0) {
+        await this.#sleep(sleepSeconds * 1000);
       }
+    }
 
-      const sleepSeconds = this.sleep ? parseFloat(this.sleep) : undefined;
-      if (
-        sleepSeconds !== undefined &&
-        (isNaN(sleepSeconds) || sleepSeconds < 0)
-      ) {
-        throw new Error("Invalid sleep value");
-      }
-
-      let hasBatches = false;
-      for await (const batch of pgslice.fill({
-        table: this.table,
-        swapped: this.swapped,
-        sourceTable: this.sourceTable,
-        destTable: this.destTable,
-        batchSize,
-        start: this.start,
-      })) {
-        hasBatches = true;
-
-        // Format progress message
-        const batchLabel =
-          batch.totalBatches !== null
-            ? `${batch.batchNumber} of ${batch.totalBatches}`
-            : `batch ${batch.batchNumber}`;
-
-        this.context.stdout.write(`/* ${batchLabel} */\n`);
-
-        // Sleep between batches if requested
-        if (sleepSeconds !== undefined && sleepSeconds > 0) {
-          await this.#sleep(sleepSeconds * 1000);
-        }
-      }
-
-      if (!hasBatches) {
-        this.context.stdout.write("/* nothing to fill */\n");
-      }
-    } catch (error) {
-      if (error instanceof Error) {
-        this.context.stderr.write(`${error.message}\n`);
-      } else {
-        this.context.stderr.write(`${error}\n`);
-      }
-      return 1;
-    } finally {
-      await pgslice.close();
+    if (!hasBatches) {
+      this.context.stdout.write("/* nothing to fill */\n");
     }
   }
 

@@ -1,7 +1,7 @@
 import { Command, Option } from "clipanion";
-import { DatabaseTransactionConnection } from "slonik";
 
 import { BaseCommand } from "./base.js";
+import { type Pgslice } from "../pgslice.js";
 
 export class DisableMirroringCommand extends BaseCommand {
   static override paths = [["mirroring", "disable"], ["disable_mirroring"]];
@@ -23,10 +23,12 @@ export class DisableMirroringCommand extends BaseCommand {
 
   table = Option.String({ required: true, name: "table" });
 
-  override async perform(tx: DatabaseTransactionConnection): Promise<void> {
-    await this.context.pgslice.disableMirroring(tx, { table: this.table });
-    this.context.stdout.write(
-      `Mirroring triggers disabled for ${this.table}\n`,
-    );
+  override async perform(pgslice: Pgslice): Promise<void> {
+    await pgslice.start(async (tx) => {
+      await this.context.pgslice.disableMirroring(tx, { table: this.table });
+      this.context.stdout.write(
+        `Mirroring triggers disabled for ${this.table}\n`,
+      );
+    });
   }
 }

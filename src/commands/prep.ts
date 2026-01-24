@@ -1,9 +1,9 @@
 import { Command, Option } from "clipanion";
-import { DatabaseTransactionConnection } from "slonik";
 import * as t from "typanion";
 
 import { PERIODS } from "../types.js";
 import { BaseCommand } from "./base.js";
+import { type Pgslice } from "../pgslice.js";
 
 export class PrepCommand extends BaseCommand {
   static override paths = [["prep"]];
@@ -44,29 +44,25 @@ export class PrepCommand extends BaseCommand {
     description: "Create a partitioned table (default: true)",
   });
 
-  override async perform(tx: DatabaseTransactionConnection): Promise<void> {
-    if (!this.partition) {
-      if (this.column || this.period) {
+  override async perform(pgslice: Pgslice): Promise<void> {
+    const { column, partition, period, table } = this;
+
+    if (!partition) {
+      if (column || period) {
         throw new Error(
           'Usage: "pgslice prep TABLE --no-partition" (column and period not allowed)',
         );
       }
 
-      await this.context.pgslice.prep(tx, {
-        table: this.table,
-        partition: this.partition,
-      });
+      await pgslice.start(async (tx) => pgslice.prep(tx, { table, partition }));
     } else {
-      if (!this.column || !this.period) {
+      if (!column || !period) {
         throw new Error('Usage: "pgslice prep TABLE COLUMN PERIOD"');
       }
 
-      await this.context.pgslice.prep(tx, {
-        table: this.table,
-        column: this.column,
-        period: this.period,
-        partition: this.partition,
-      });
+      await pgslice.start(async (tx) =>
+        pgslice.prep(tx, { column, partition, period, table }),
+      );
     }
   }
 }

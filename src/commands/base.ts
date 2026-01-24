@@ -1,6 +1,5 @@
 import { Command, Option, BaseContext } from "clipanion";
 import { Pgslice } from "../pgslice.js";
-import { DatabaseTransactionConnection } from "slonik";
 
 export interface Context extends BaseContext {
   pgslice: Pgslice;
@@ -33,9 +32,7 @@ export abstract class BaseCommand extends Command<Context> {
         },
       );
 
-      await this.context.pgslice.start((transaction) =>
-        this.perform(transaction),
-      );
+      await this.perform(this.context.pgslice);
     } catch (error) {
       if (error instanceof Error) {
         this.context.stderr.write(`${error.message}\n`);
@@ -52,7 +49,5 @@ export abstract class BaseCommand extends Command<Context> {
   /**
    * The main logic of the command goes here. Avoid overriding `execute`.
    */
-  protected abstract perform(
-    transaction: DatabaseTransactionConnection,
-  ): Promise<number | void>;
+  protected abstract perform(pgslice: Pgslice): Promise<number | void>;
 }
