@@ -312,8 +312,7 @@ export class Pgslice {
       throw new Error(`Table not found: ${intermediate.toString()}`);
     }
 
-    const mirroring = new Mirroring({ source: table, target: intermediate });
-    await mirroring.enable(tx);
+    await new Mirroring({ source: table, target: intermediate }).enable(tx);
   }
 
   /**
@@ -331,8 +330,7 @@ export class Pgslice {
       throw new Error(`Table not found: ${table.toString()}`);
     }
 
-    const mirroring = new Mirroring({ source: table, target: intermediate });
-    await mirroring.disable(tx);
+    await new Mirroring({ source: table, target: intermediate }).disable(tx);
   }
 }
 
