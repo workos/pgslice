@@ -353,25 +353,9 @@ export class Pgslice {
   async *fill(options: FillOptions): AsyncGenerator<FillBatchResult> {
     const table = Table.parse(options.table);
 
-    // Resolve source and dest tables based on options
-    let sourceTable: Table;
-    let destTable: Table;
-
-    if (options.sourceTable) {
-      sourceTable = Table.parse(options.sourceTable);
-    } else if (options.swapped) {
-      sourceTable = table.retired();
-    } else {
-      sourceTable = table;
-    }
-
-    if (options.destTable) {
-      destTable = Table.parse(options.destTable);
-    } else if (options.swapped) {
-      destTable = table;
-    } else {
-      destTable = table.intermediate();
-    }
+    // Resolve source and dest tables based on swapped option
+    const sourceTable = options.swapped ? table.retired() : table;
+    const destTable = options.swapped ? table : table.intermediate();
 
     // Use a transaction for the initial setup/metadata reads
     const setupResult = await this.start(async (tx) => {

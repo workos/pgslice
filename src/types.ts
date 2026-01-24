@@ -91,8 +91,6 @@ export interface TimeFilter {
 export interface FillOptions {
   table: string;
   swapped?: boolean;
-  sourceTable?: string;
-  destTable?: string;
   batchSize?: number;
   start?: string;
 }

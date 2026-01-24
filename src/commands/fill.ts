@@ -45,14 +45,6 @@ export class FillCommand extends BaseCommand {
     description: "Use swapped table (source=retired, dest=original)",
   });
 
-  sourceTable = Option.String("--source-table", {
-    description: "Override source table",
-  });
-
-  destTable = Option.String("--dest-table", {
-    description: "Override destination table",
-  });
-
   start = Option.String("--start", {
     description: "Primary key value to start from (numeric or ULID)",
   });
@@ -67,8 +59,6 @@ export class FillCommand extends BaseCommand {
     for await (const batch of pgslice.fill({
       table: this.table,
       swapped: this.swapped,
-      sourceTable: this.sourceTable,
-      destTable: this.destTable,
       batchSize: this.batchSize,
       start: this.start,
     })) {
