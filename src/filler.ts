@@ -83,10 +83,11 @@ export class Filler {
     while (true) {
       batchNumber++;
 
-      const result = await this.#processBatch(connection, {
+      const result = await this.#processBatch(
+        connection,
         currentId,
         includeStart,
-      });
+      );
 
       // Update current ID for next batch
       if (result.endId !== null) {
@@ -107,15 +108,9 @@ export class Filler {
 
   async #processBatch(
     connection: CommonQueryMethods,
-    {
-      currentId,
-      includeStart,
-    }: {
-      currentId: IdValue | null;
-      includeStart: boolean;
-    },
+    currentId: IdValue | null,
+    includeStart: boolean,
   ): Promise<{
-    totalBatches: number | null;
     rowsInserted: number;
     startId: IdValue | null;
     endId: IdValue | null;
@@ -188,7 +183,6 @@ export class Filler {
     const endId = transformIdValue(result.max_id);
 
     return {
-      totalBatches: null,
       rowsInserted: result.count,
       startId,
       endId,

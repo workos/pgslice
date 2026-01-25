@@ -64,13 +64,7 @@ export class FillCommand extends BaseCommand {
     })) {
       hasBatches = true;
 
-      // Format progress message
-      const batchLabel =
-        batch.totalBatches !== null
-          ? `${batch.batchNumber} of ${batch.totalBatches}`
-          : `batch ${batch.batchNumber}`;
-
-      this.context.stdout.write(`/* ${batchLabel} */\n`);
+      this.context.stdout.write(`/* batch ${batch.batchNumber} */\n`);
 
       // Sleep between batches if requested
       if (this.sleep) {

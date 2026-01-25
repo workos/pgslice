@@ -100,7 +100,6 @@ export interface FillOptions {
  */
 export interface FillBatchResult {
   batchNumber: number;
-  totalBatches: number | null;
   rowsInserted: number;
   startId: IdValue | null;
   endId: IdValue | null;

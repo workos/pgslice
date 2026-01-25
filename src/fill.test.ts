@@ -33,21 +33,15 @@ describe("Filler", () => {
         columns,
       });
 
-      const batches: Array<{
-        batchNumber: number;
-        totalBatches: number | null;
-      }> = [];
-      for await (const batch of filler.fill(transaction)) {
-        batches.push({
-          batchNumber: batch.batchNumber,
-          totalBatches: batch.totalBatches,
-        });
+      const batches: Array<{ batchNumber: number }> = [];
+      for await (const { batchNumber } of filler.fill(transaction)) {
+        batches.push({ batchNumber });
       }
 
       expect(batches).toEqual([
-        { batchNumber: 1, totalBatches: null },
-        { batchNumber: 2, totalBatches: null },
-        { batchNumber: 3, totalBatches: null },
+        { batchNumber: 1 },
+        { batchNumber: 2 },
+        { batchNumber: 3 },
       ]);
 
       // Verify data was copied
@@ -155,20 +149,13 @@ describe("Filler", () => {
         columns,
       });
 
-      const batches: Array<{
-        batchNumber: number;
-        totalBatches: number | null;
-      }> = [];
-      for await (const batch of filler.fill(transaction)) {
-        batches.push({
-          batchNumber: batch.batchNumber,
-          totalBatches: batch.totalBatches,
-        });
+      const batches: Array<{ batchNumber: number }> = [];
+      for await (const { batchNumber } of filler.fill(transaction)) {
+        batches.push({ batchNumber });
       }
 
       // ULID batches don't know total count (same as numeric now)
       expect(batches.length).toBeGreaterThanOrEqual(2);
-      expect(batches[0].totalBatches).toBeNull();
 
       // Verify data was copied
       const count = await transaction.one(
