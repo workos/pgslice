@@ -125,8 +125,8 @@ describe("FillCommand", () => {
       expect(expect(exitCode).toBe(0));
       const output = commandContext.stdout.read()?.toString();
       expect(output).toBeDefined();
-      expect(output).toContain("/* 1 of 2 */");
-      expect(output).toContain("/* 2 of 2 */");
+      expect(output).toContain("/* batch 1 */");
+      expect(output).toContain("/* batch 2 */");
     });
 
     test("outputs nothing to fill when source is empty", async ({
@@ -249,8 +249,8 @@ describe("FillCommand", () => {
 
       const output = (commandContext.stdout as PassThrough).read()?.toString();
       expect(output).toBeDefined();
-      expect(output).toContain("/* 1 of 2 */");
-      expect(output).toContain("/* 2 of 2 */");
+      expect(output).toContain("/* batch 1 */");
+      expect(output).toContain("/* batch 2 */");
     });
   });
 });

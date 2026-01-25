@@ -3,7 +3,6 @@ import { sql } from "slonik";
 
 import { pgsliceTest as test } from "./testing/index.js";
 import { Table } from "./table.js";
-import { NumericComparator, UlidComparator } from "./id-comparator.js";
 
 describe("Table.maxId", () => {
   test("returns max bigint ID from table", async ({ transaction }) => {
@@ -152,82 +151,5 @@ describe("Table.minId", () => {
     });
 
     expect(minId).toBe(2n);
-  });
-});
-
-describe("Table.createIdComparator", () => {
-  test("returns NumericComparator for bigint IDs", async ({ transaction }) => {
-    await transaction.query(sql.unsafe`
-      CREATE TABLE test_table (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
-    await transaction.query(sql.unsafe`
-      INSERT INTO test_table (name) VALUES ('a')
-    `);
-
-    const table = Table.parse("test_table");
-    const comparator = await table.createIdComparator(transaction, "id");
-
-    expect(comparator).toBeInstanceOf(NumericComparator);
-  });
-
-  test("returns UlidComparator for ULID string IDs", async ({
-    transaction,
-  }) => {
-    await transaction.query(sql.unsafe`
-      CREATE TABLE test_table (id TEXT PRIMARY KEY, name TEXT)
-    `);
-    await transaction.query(sql.unsafe`
-      INSERT INTO test_table (id, name) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAV', 'a')
-    `);
-
-    const table = Table.parse("test_table");
-    const comparator = await table.createIdComparator(transaction, "id");
-
-    expect(comparator).toBeInstanceOf(UlidComparator);
-  });
-
-  test("returns NumericComparator for empty table", async ({ transaction }) => {
-    await transaction.query(sql.unsafe`
-      CREATE TABLE test_table (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
-
-    const table = Table.parse("test_table");
-    const comparator = await table.createIdComparator(transaction, "id");
-
-    expect(comparator).toBeInstanceOf(NumericComparator);
-  });
-
-  test("uses hint to determine comparator type for numeric hint", async ({
-    transaction,
-  }) => {
-    await transaction.query(sql.unsafe`
-      CREATE TABLE test_table (id TEXT PRIMARY KEY, name TEXT)
-    `);
-
-    const table = Table.parse("test_table");
-    const comparator = await table.createIdComparator(
-      transaction,
-      "id",
-      "12345",
-    );
-
-    expect(comparator).toBeInstanceOf(NumericComparator);
-  });
-
-  test("uses hint to determine comparator type for ULID hint", async ({
-    transaction,
-  }) => {
-    await transaction.query(sql.unsafe`
-      CREATE TABLE test_table (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
-
-    const table = Table.parse("test_table");
-    const comparator = await table.createIdComparator(
-      transaction,
-      "id",
-      "01ARZ3NDEKTSV4RRFFQ69G5FAV",
-    );
-
-    expect(comparator).toBeInstanceOf(UlidComparator);
   });
 });

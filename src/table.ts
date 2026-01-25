@@ -7,12 +7,6 @@ import {
 import { z } from "zod";
 import type { Cast, IdValue } from "./types.js";
 import { TableSettings } from "./table-settings.js";
-import {
-  IdComparator,
-  NumericComparator,
-  UlidComparator,
-  isUlid,
-} from "./id-comparator.js";
 import { formatDateForSql } from "./sql-utils.js";
 
 /**
@@ -291,49 +285,6 @@ export class Table {
     }
 
     return TableSettings.parseFromComment(result.comment);
-  }
-
-  /**
-   * Creates an IdComparator appropriate for this table's primary key type.
-   *
-   * @param tx - Database connection
-   * @param primaryKeyColumn - The name of the primary key column
-   * @param hint - Optional hint value from --start option to determine ID type
-   */
-  async createIdComparator(
-    tx: CommonQueryMethods,
-    primaryKeyColumn: string,
-    hint?: string,
-  ): Promise<IdComparator<string | bigint>> {
-    // If hint provided (from --start), determine type from hint
-    if (hint !== undefined) {
-      if (isUlid(hint)) {
-        return new UlidComparator(primaryKeyColumn);
-      }
-      return new NumericComparator(primaryKeyColumn);
-    }
-
-    // Sample a row to detect the ID type
-    const result = await tx.maybeOne(
-      sql.type(z.object({ id: idValueSchema }))`
-        SELECT ${sql.identifier([primaryKeyColumn])} AS id
-        FROM ${this.toSqlIdentifier()}
-        LIMIT 1
-      `,
-    );
-
-    if (result === null || result.id === null) {
-      // Empty table, default to numeric
-      return new NumericComparator(primaryKeyColumn);
-    }
-
-    // Transform the ID and check its type
-    const transformedId = transformIdValue(result.id);
-    if (typeof transformedId === "string" && isUlid(transformedId)) {
-      return new UlidComparator(primaryKeyColumn);
-    }
-
-    return new NumericComparator(primaryKeyColumn);
   }
 
   /**

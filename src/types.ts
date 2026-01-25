@@ -102,6 +102,6 @@ export interface FillBatchResult {
   batchNumber: number;
   totalBatches: number | null;
   rowsInserted: number;
-  startId: IdValue;
-  endId: IdValue;
+  startId: IdValue | null;
+  endId: IdValue | null;
 }

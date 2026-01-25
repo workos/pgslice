@@ -1,19 +1,45 @@
 import { CommonQueryMethods, sql } from "slonik";
 import { z } from "zod";
 import type { Table } from "./table.js";
-import type { IdComparator } from "./id-comparator.js";
 import type { FillBatchResult, IdValue, TimeFilter } from "./types.js";
 import { formatDateForSql } from "./sql-utils.js";
+
+/**
+ * Zod schema for validating ID values from the database.
+ */
+const idValueSchema = z.union([z.bigint(), z.number(), z.string()]).nullable();
+
+/**
+ * Transforms a raw ID value from the database into the proper IdValue type.
+ * Numbers and numeric strings become bigint, ULID strings stay as strings.
+ */
+function transformIdValue(
+  val: bigint | number | string | null,
+): IdValue | null {
+  if (val === null) {
+    return null;
+  }
+  if (typeof val === "bigint") {
+    return val;
+  }
+  if (typeof val === "number") {
+    return BigInt(val);
+  }
+  // val is string - check if it's a numeric string or ULID
+  if (/^\d+$/.test(val)) {
+    return BigInt(val);
+  }
+  return val;
+}
 
 export interface FillerOptions {
   source: Table;
   dest: Table;
-  comparator: IdComparator<string | bigint>;
+  primaryKeyColumn: string;
   batchSize: number;
-  startingId: IdValue;
-  maxSourceId: IdValue;
-  includeStart: boolean;
   columns: string[];
+  startingId?: IdValue;
+  includeStart?: boolean;
   timeFilter?: TimeFilter;
 }
 
@@ -25,33 +51,25 @@ export interface FillerOptions {
 export class Filler {
   readonly #source: Table;
   readonly #dest: Table;
-  readonly #comparator: IdComparator<string | bigint>;
+  readonly #primaryKeyColumn: string;
   readonly #batchSize: number;
-  readonly #maxSourceId: IdValue;
   readonly #columns: string[];
   readonly #timeFilter?: TimeFilter;
 
-  #currentId: IdValue;
+  #currentId: IdValue | null;
   #includeStart: boolean;
   #batchNumber: number;
-  #totalBatches: number | null;
 
   constructor(options: FillerOptions) {
     this.#source = options.source;
     this.#dest = options.dest;
-    this.#comparator = options.comparator;
+    this.#primaryKeyColumn = options.primaryKeyColumn;
     this.#batchSize = options.batchSize;
-    this.#currentId = options.startingId;
-    this.#maxSourceId = options.maxSourceId;
-    this.#includeStart = options.includeStart;
     this.#columns = options.columns;
     this.#timeFilter = options.timeFilter;
+    this.#currentId = options.startingId ?? null;
+    this.#includeStart = options.includeStart ?? false;
     this.#batchNumber = 0;
-    this.#totalBatches = this.#comparator.batchCount(
-      options.startingId,
-      options.maxSourceId,
-      options.batchSize,
-    );
   }
 
   /**
@@ -61,13 +79,19 @@ export class Filler {
    * @param connection - Database connection pool or query methods
    */
   async *fill(connection: CommonQueryMethods): AsyncGenerator<FillBatchResult> {
-    while (
-      this.#comparator.shouldContinue(this.#currentId, this.#maxSourceId)
-    ) {
+    while (true) {
       this.#batchNumber++;
 
-      yield await this.#processBatch(connection);
+      const result = await this.#processBatch(connection);
 
+      // Stop when no rows were inserted (source exhausted)
+      if (result.rowsInserted === 0) {
+        break;
+      }
+
+      yield result;
+
+      // After first batch, always use exclusive comparison
       this.#includeStart = false;
     }
   }
@@ -76,19 +100,41 @@ export class Filler {
     connection: CommonQueryMethods,
   ): Promise<FillBatchResult> {
     const startId = this.#currentId;
+    const pkCol = sql.identifier([this.#primaryKeyColumn]);
 
-    // Build the WHERE clause
-    const batchWhere = this.#comparator.batchWhereCondition(
-      this.#currentId,
-      this.#batchSize,
-      this.#includeStart,
-    );
+    // Build WHERE conditions
+    const conditions = [];
 
-    let whereClause = batchWhere;
-    if (this.#timeFilter) {
-      const timeWhere = this.#buildTimeFilterClause(this.#timeFilter);
-      whereClause = sql.fragment`${batchWhere} AND ${timeWhere}`;
+    // Add primary key condition if we have a starting ID
+    if (this.#currentId !== null) {
+      if (this.#includeStart) {
+        conditions.push(sql.fragment`${pkCol} >= ${this.#currentId}`);
+      } else {
+        conditions.push(sql.fragment`${pkCol} > ${this.#currentId}`);
+      }
     }
+
+    // Add time filter conditions if present
+    if (this.#timeFilter) {
+      const timeCol = sql.identifier([this.#timeFilter.column]);
+      const startDate = formatDateForSql(
+        this.#timeFilter.startingTime,
+        this.#timeFilter.cast,
+      );
+      const endDate = formatDateForSql(
+        this.#timeFilter.endingTime,
+        this.#timeFilter.cast,
+      );
+      conditions.push(
+        sql.fragment`${timeCol} >= ${startDate} AND ${timeCol} < ${endDate}`,
+      );
+    }
+
+    // Build the final WHERE clause
+    const whereClause =
+      conditions.length > 0
+        ? sql.join(conditions, sql.fragment` AND `)
+        : sql.fragment`TRUE`;
 
     // Build column list
     const columnList = sql.join(
@@ -96,54 +142,41 @@ export class Filler {
       sql.fragment`, `,
     );
 
-    // Build the SELECT suffix (ORDER BY/LIMIT for ULIDs)
-    const selectSuffix = this.#comparator.selectSuffix(this.#batchSize);
-
-    // Build and execute the INSERT query
-    const insertQuery = selectSuffix
-      ? sql.type(z.object({}))`
+    // Build and execute the CTE-based INSERT query
+    const result = await connection.one(
+      sql.type(
+        z.object({
+          max_id: idValueSchema,
+          count: z.coerce.number(),
+        }),
+      )`
+        WITH batch AS (
           INSERT INTO ${this.#dest.toSqlIdentifier()} (${columnList})
           SELECT ${columnList}
           FROM ${this.#source.toSqlIdentifier()}
           WHERE ${whereClause}
-          ${selectSuffix}
+          ORDER BY ${pkCol}
+          LIMIT ${this.#batchSize}
           ON CONFLICT DO NOTHING
-        `
-      : sql.type(z.object({}))`
-          INSERT INTO ${this.#dest.toSqlIdentifier()} (${columnList})
-          SELECT ${columnList}
-          FROM ${this.#source.toSqlIdentifier()}
-          WHERE ${whereClause}
-          ON CONFLICT DO NOTHING
-        `;
-
-    const queryResult = await connection.query(insertQuery);
-
-    // Get the next starting ID
-    this.#currentId = await this.#comparator.nextStartingId(
-      this.#currentId,
-      this.#batchSize,
-      connection,
-      this.#source,
+          RETURNING ${pkCol}
+        )
+        SELECT MAX(${pkCol}) AS max_id, COUNT(*)::int AS count FROM batch
+      `,
     );
+
+    const endId = transformIdValue(result.max_id);
+
+    // Update current ID for next batch
+    if (endId !== null) {
+      this.#currentId = endId;
+    }
 
     return {
       batchNumber: this.#batchNumber,
-      totalBatches: this.#totalBatches,
-      rowsInserted: queryResult.rowCount,
+      totalBatches: null,
+      rowsInserted: result.count,
       startId,
-      endId: this.#currentId,
+      endId,
     };
-  }
-
-  #buildTimeFilterClause(timeFilter: TimeFilter) {
-    const timeCol = sql.identifier([timeFilter.column]);
-    const startDate = formatDateForSql(
-      timeFilter.startingTime,
-      timeFilter.cast,
-    );
-    const endDate = formatDateForSql(timeFilter.endingTime, timeFilter.cast);
-
-    return sql.fragment`${timeCol} >= ${startDate} AND ${timeCol} < ${endDate}`;
   }
 }

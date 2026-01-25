@@ -5,7 +5,6 @@ import { z } from "zod";
 import { pgsliceTest as test } from "./testing/index.js";
 import { Table } from "./table.js";
 import { Filler } from "./filler.js";
-import { NumericComparator, UlidComparator } from "./id-comparator.js";
 
 describe("Filler", () => {
   describe("with numeric IDs", () => {
@@ -24,17 +23,13 @@ describe("Filler", () => {
 
       const source = Table.parse("source_table");
       const dest = Table.parse("dest_table");
-      const comparator = new NumericComparator("id");
       const columns = ["id", "name"];
 
       const filler = new Filler({
         source,
         dest,
-        comparator,
+        primaryKeyColumn: "id",
         batchSize: 10,
-        startingId: 0n,
-        maxSourceId: 25n,
-        includeStart: false,
         columns,
       });
 
@@ -50,9 +45,9 @@ describe("Filler", () => {
       }
 
       expect(batches).toEqual([
-        { batchNumber: 1, totalBatches: 3 },
-        { batchNumber: 2, totalBatches: 3 },
-        { batchNumber: 3, totalBatches: 3 },
+        { batchNumber: 1, totalBatches: null },
+        { batchNumber: 2, totalBatches: null },
+        { batchNumber: 3, totalBatches: null },
       ]);
 
       // Verify data was copied
@@ -77,17 +72,15 @@ describe("Filler", () => {
 
       const source = Table.parse("source_table");
       const dest = Table.parse("dest_table");
-      const comparator = new NumericComparator("id");
       const columns = ["id", "name"];
 
       // Start from 2, inclusive (should include id=2)
       const filler = new Filler({
         source,
         dest,
-        comparator,
+        primaryKeyColumn: "id",
         batchSize: 10,
         startingId: 2n,
-        maxSourceId: 5n,
         includeStart: true,
         columns,
       });
@@ -114,18 +107,13 @@ describe("Filler", () => {
 
       const source = Table.parse("source_table");
       const dest = Table.parse("dest_table");
-      const comparator = new NumericComparator("id");
       const columns = ["id", "name"];
 
-      // When max <= start, shouldContinue returns false immediately
       const filler = new Filler({
         source,
         dest,
-        comparator,
+        primaryKeyColumn: "id",
         batchSize: 10,
-        startingId: 0n,
-        maxSourceId: 0n,
-        includeStart: false,
         columns,
       });
 
@@ -157,17 +145,13 @@ describe("Filler", () => {
 
       const source = Table.parse("source_table");
       const dest = Table.parse("dest_table");
-      const comparator = new UlidComparator("id");
       const columns = ["id", "name"];
 
       const filler = new Filler({
         source,
         dest,
-        comparator,
+        primaryKeyColumn: "id",
         batchSize: 2,
-        startingId: "00000000000000000000000000", // Before all ULIDs
-        maxSourceId: "01ARZ3NDEKTSV4RRFFQ69G5FAE",
-        includeStart: false,
         columns,
       });
 
@@ -182,7 +166,7 @@ describe("Filler", () => {
         });
       }
 
-      // ULID batches don't know total count
+      // ULID batches don't know total count (same as numeric now)
       expect(batches.length).toBeGreaterThanOrEqual(2);
       expect(batches[0].totalBatches).toBeNull();
 
@@ -214,17 +198,13 @@ describe("Filler", () => {
 
       const source = Table.parse("source_table");
       const dest = Table.parse("dest_table");
-      const comparator = new NumericComparator("id");
       const columns = ["id", "name"];
 
       const filler = new Filler({
         source,
         dest,
-        comparator,
+        primaryKeyColumn: "id",
         batchSize: 10,
-        startingId: 0n,
-        maxSourceId: 3n,
-        includeStart: false,
         columns,
       });
 

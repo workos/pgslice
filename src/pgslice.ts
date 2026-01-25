@@ -2,7 +2,6 @@ import {
   CommonQueryMethods,
   createPool,
   DatabaseTransactionConnection,
-  SlonikError,
   sql,
   type DatabasePool,
 } from "slonik";
@@ -25,7 +24,6 @@ import { DateRanges, advanceDate, parsePartitionDate } from "./date-ranges.js";
 import { formatDateForSql, rawSql } from "./sql-utils.js";
 import { Mirroring } from "./mirroring.js";
 import { Filler } from "./filler.js";
-import { isUlid } from "./id-comparator.js";
 
 interface PgsliceOptions {
   dryRun?: boolean;
@@ -417,123 +415,52 @@ export class Pgslice {
       // Get columns from source table
       const columns = await sourceTable.columns(tx);
 
-      // Get max source ID
-      let maxSourceId: IdValue | null;
-      try {
-        maxSourceId = await sourceTable.maxId(tx, primaryKeyColumn);
-      } catch (error) {
-        if (
-          error instanceof SlonikError &&
-          error.message.includes("UndefinedFunction")
-        ) {
-          throw new Error("Only numeric and ULID primary keys are supported");
-        }
-        throw error;
-      }
-
-      // Determine starting ID
-      let startingId: IdValue | null;
+      // Determine starting ID and includeStart flag
+      let startingId: IdValue | undefined;
       let includeStart = false;
 
       if (options.start !== undefined) {
-        // Use the provided start value
+        // Use the provided start value (inclusive)
         includeStart = true;
-        if (isUlid(options.start)) {
-          startingId = options.start;
-        } else {
-          startingId = BigInt(options.start);
-        }
+        // Parse as bigint if numeric, otherwise keep as string (ULID)
+        startingId = /^\d+$/.test(options.start)
+          ? BigInt(options.start)
+          : options.start;
       } else if (options.swapped) {
-        // Get max from dest where id <= maxSourceId
-        startingId = await destTable.maxId(tx, primaryKeyColumn, {
+        // Get max from dest - resume from where we left off (exclusive)
+        const maxSourceId = await sourceTable.maxId(tx, primaryKeyColumn);
+        const destMaxId = await destTable.maxId(tx, primaryKeyColumn, {
           below: maxSourceId ?? undefined,
         });
+        startingId = destMaxId ?? undefined;
       } else {
-        // Get max from dest
-        startingId = await destTable.maxId(tx, primaryKeyColumn);
+        // Get max from dest - resume from where we left off (exclusive)
+        const destMaxId = await destTable.maxId(tx, primaryKeyColumn);
+        startingId = destMaxId ?? undefined;
       }
-
-      // Handle case where dest is empty and not swapped
-      const comparator = await sourceTable.createIdComparator(
-        tx,
-        primaryKeyColumn,
-        options.start,
-      );
-
-      if (
-        (startingId === null ||
-          startingId === comparator.minValue ||
-          startingId === 0n) &&
-        !options.swapped
-      ) {
-        const minSourceId = await sourceTable.minId(tx, primaryKeyColumn, {
-          column: timeFilter?.column,
-          cast: timeFilter?.cast,
-          startingTime: timeFilter?.startingTime,
-        });
-
-        if (minSourceId !== null) {
-          startingId = comparator.predecessor(minSourceId);
-        }
-      }
-
-      // If still no max source ID and no start option, nothing to fill
-      if (maxSourceId === null && options.start === undefined) {
-        return null;
-      }
-
-      // At this point, either maxSourceId is not null, or options.start was provided
-      // (which means startingId is also not null).
-      const finalMaxSourceId = maxSourceId ?? startingId;
-      if (finalMaxSourceId === null) {
-        // This should never happen based on the logic above, but TypeScript can't know that
-        throw new Error(
-          "Unexpected: maxSourceId should be defined at this point",
-        );
-      }
-
-      const finalStartingId = startingId ?? comparator.minValue;
 
       return {
         sourceTable,
         destTable,
         primaryKeyColumn,
         columns,
-        maxSourceId: finalMaxSourceId,
-        startingId: finalStartingId,
-        comparator,
-        timeFilter,
+        startingId,
         includeStart,
+        timeFilter,
       };
     });
 
-    // Nothing to fill
-    if (setupResult === null) {
-      return;
-    }
-
     const batchSize = options.batchSize ?? 10000;
-    const batchCount = setupResult.comparator.batchCount(
-      setupResult.startingId,
-      setupResult.maxSourceId,
-      batchSize,
-    );
-
-    // If numeric and batch count is 0, nothing to fill
-    if (batchCount === 0) {
-      return;
-    }
 
     // Create the filler
     const filler = new Filler({
       source: setupResult.sourceTable,
       dest: setupResult.destTable,
-      comparator: setupResult.comparator,
+      primaryKeyColumn: setupResult.primaryKeyColumn,
       batchSize,
-      startingId: setupResult.startingId,
-      maxSourceId: setupResult.maxSourceId,
-      includeStart: setupResult.includeStart,
       columns: setupResult.columns,
+      startingId: setupResult.startingId,
+      includeStart: setupResult.includeStart,
       timeFilter: setupResult.timeFilter,
     });
 
