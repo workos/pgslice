@@ -55,10 +55,8 @@ export class Filler {
   readonly #batchSize: number;
   readonly #columns: string[];
   readonly #timeFilter?: TimeFilter;
-
-  #currentId: IdValue | null;
-  #includeStart: boolean;
-  #batchNumber: number;
+  readonly #includeStart: boolean;
+  readonly #startingId: IdValue | null;
 
   constructor(options: FillerOptions) {
     this.#source = options.source;
@@ -67,9 +65,8 @@ export class Filler {
     this.#batchSize = options.batchSize;
     this.#columns = options.columns;
     this.#timeFilter = options.timeFilter;
-    this.#currentId = options.startingId ?? null;
     this.#includeStart = options.includeStart ?? false;
-    this.#batchNumber = 0;
+    this.#startingId = options.startingId ?? null;
   }
 
   /**
@@ -79,38 +76,62 @@ export class Filler {
    * @param connection - Database connection pool or query methods
    */
   async *fill(connection: CommonQueryMethods): AsyncGenerator<FillBatchResult> {
-    while (true) {
-      this.#batchNumber++;
+    let currentId = this.#startingId;
+    let includeStart = this.#includeStart;
+    let batchNumber = 0;
 
-      const result = await this.#processBatch(connection);
+    while (true) {
+      batchNumber++;
+
+      const result = await this.#processBatch(connection, {
+        currentId,
+        includeStart,
+      });
+
+      // Update current ID for next batch
+      if (result.endId !== null) {
+        currentId = result.endId;
+      }
 
       // Stop when no rows were inserted (source exhausted)
       if (result.rowsInserted === 0) {
         break;
       }
 
-      yield result;
+      yield { ...result, batchNumber };
 
       // After first batch, always use exclusive comparison
-      this.#includeStart = false;
+      includeStart = false;
     }
   }
 
   async #processBatch(
     connection: CommonQueryMethods,
-  ): Promise<FillBatchResult> {
-    const startId = this.#currentId;
+    {
+      currentId,
+      includeStart,
+    }: {
+      currentId: IdValue | null;
+      includeStart: boolean;
+    },
+  ): Promise<{
+    totalBatches: number | null;
+    rowsInserted: number;
+    startId: IdValue | null;
+    endId: IdValue | null;
+  }> {
+    const startId = currentId;
     const pkCol = sql.identifier([this.#primaryKeyColumn]);
 
     // Build WHERE conditions
     const conditions = [];
 
     // Add primary key condition if we have a starting ID
-    if (this.#currentId !== null) {
-      if (this.#includeStart) {
-        conditions.push(sql.fragment`${pkCol} >= ${this.#currentId}`);
+    if (currentId !== null) {
+      if (includeStart) {
+        conditions.push(sql.fragment`${pkCol} >= ${currentId}`);
       } else {
-        conditions.push(sql.fragment`${pkCol} > ${this.#currentId}`);
+        conditions.push(sql.fragment`${pkCol} > ${currentId}`);
       }
     }
 
@@ -166,13 +187,7 @@ export class Filler {
 
     const endId = transformIdValue(result.max_id);
 
-    // Update current ID for next batch
-    if (endId !== null) {
-      this.#currentId = endId;
-    }
-
     return {
-      batchNumber: this.#batchNumber,
       totalBatches: null,
       rowsInserted: result.count,
       startId,
