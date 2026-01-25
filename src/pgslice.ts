@@ -357,7 +357,6 @@ export class Pgslice {
 
     // Use a transaction for the initial setup/metadata reads
     const setupResult = await this.start(async (tx) => {
-      // Verify tables exist
       if (!(await sourceTable.exists(tx))) {
         throw new Error(`Table not found: ${sourceTable.toString()}`);
       }
@@ -450,21 +449,17 @@ export class Pgslice {
       };
     });
 
-    const batchSize = options.batchSize ?? 10000;
-
-    // Create the filler
     const filler = new Filler({
       source: setupResult.sourceTable,
       dest: setupResult.destTable,
       primaryKeyColumn: setupResult.primaryKeyColumn,
-      batchSize,
+      batchSize: options.batchSize ?? 10_000,
       columns: setupResult.columns,
       startingId: setupResult.startingId,
       includeStart: setupResult.includeStart,
       timeFilter: setupResult.timeFilter,
     });
 
-    // Process batches - each batch in its own transaction
     for await (const batch of filler.fill(this.connection)) {
       yield batch;
     }
