@@ -491,5 +491,336 @@ describe("Synchronizer.synchronize", () => {
     expect(batches[0].primaryKeyRange.start).toBe(1n);
     expect(batches[0].primaryKeyRange.end).toBe(3n);
   });
+
+  test("handles NULL values in columns", async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, description TEXT)
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, description TEXT)
+    `);
+    // Source has NULL values
+    await transaction.query(sql.unsafe`
+      INSERT INTO posts (name, description) VALUES ('a', NULL), ('b', 'has description'), (NULL, 'c')
+    `);
+
+    const synchronizer = await Synchronizer.init(transaction, {
+      table: "posts",
+    });
+
+    const batches = [];
+    for await (const batch of synchronizer.synchronize(transaction)) {
+      batches.push(batch);
+    }
+
+    expect(batches).toHaveLength(1);
+    expect(batches[0].rowsInserted).toBe(3);
+
+    // Verify NULL values were preserved
+    const rows = await transaction.any(
+      sql.type(
+        z.object({
+          id: z.coerce.bigint(),
+          name: z.string().nullable(),
+          description: z.string().nullable(),
+        }),
+      )`
+        SELECT id, name, description FROM posts_intermediate ORDER BY id
+      `,
+    );
+    expect(rows).toEqual([
+      { id: 1n, name: "a", description: null },
+      { id: 2n, name: "b", description: "has description" },
+      { id: 3n, name: null, description: "c" },
+    ]);
+  });
+
+  test("handles timestamp columns", async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, created_at TIMESTAMPTZ)
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, created_at TIMESTAMPTZ)
+    `);
+    await transaction.query(sql.unsafe`
+      INSERT INTO posts (name, created_at) VALUES
+        ('a', '2024-01-15 10:30:00+00'),
+        ('b', '2024-06-20 14:45:30+00'),
+        ('c', NULL)
+    `);
+
+    const synchronizer = await Synchronizer.init(transaction, {
+      table: "posts",
+    });
+
+    const batches = [];
+    for await (const batch of synchronizer.synchronize(transaction)) {
+      batches.push(batch);
+    }
+
+    expect(batches).toHaveLength(1);
+    expect(batches[0].rowsInserted).toBe(3);
+
+    // Verify timestamps were preserved by comparing source and target
+    const sourceRows = await transaction.any(
+      sql.type(
+        z.object({
+          id: z.coerce.bigint(),
+          created_at: z.number().nullable(),
+        }),
+      )`
+        SELECT id, EXTRACT(EPOCH FROM created_at)::bigint as created_at
+        FROM posts ORDER BY id
+      `,
+    );
+    const targetRows = await transaction.any(
+      sql.type(
+        z.object({
+          id: z.coerce.bigint(),
+          created_at: z.number().nullable(),
+        }),
+      )`
+        SELECT id, EXTRACT(EPOCH FROM created_at)::bigint as created_at
+        FROM posts_intermediate ORDER BY id
+      `,
+    );
+
+    expect(targetRows).toHaveLength(3);
+    // Timestamps should match between source and target
+    expect(targetRows[0].created_at).toBe(sourceRows[0].created_at);
+    expect(targetRows[1].created_at).toBe(sourceRows[1].created_at);
+    expect(targetRows[2].created_at).toBeNull();
+  });
+
+  test("detects differences in timestamp columns", async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, created_at TIMESTAMPTZ)
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, created_at TIMESTAMPTZ)
+    `);
+    // Source has updated timestamps
+    await transaction.query(sql.unsafe`
+      INSERT INTO posts (name, created_at) VALUES
+        ('a', '2024-01-15 10:30:00+00'),
+        ('b', '2024-06-20 14:45:30+00')
+    `);
+    // Target has old timestamps
+    await transaction.query(sql.unsafe`
+      INSERT INTO posts_intermediate (id, name, created_at) VALUES
+        (1, 'a', '2024-01-15 10:30:00+00'),
+        (2, 'b', '2023-01-01 00:00:00+00')
+    `);
+
+    const synchronizer = await Synchronizer.init(transaction, {
+      table: "posts",
+    });
+
+    const batches = [];
+    for await (const batch of synchronizer.synchronize(transaction)) {
+      batches.push(batch);
+    }
+
+    expect(batches).toHaveLength(1);
+    expect(batches[0].matchingRows).toBe(1); // id=1 matches
+    expect(batches[0].rowsUpdated).toBe(1); // id=2 has different timestamp
+  });
+
+  test("handles bigint columns", async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, view_count BIGINT)
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, view_count BIGINT)
+    `);
+    // Use large numbers that exceed JavaScript's safe integer range
+    await transaction.query(sql.unsafe`
+      INSERT INTO posts (name, view_count) VALUES
+        ('a', 9007199254740993),
+        ('b', 9007199254740994),
+        ('c', NULL)
+    `);
+
+    const synchronizer = await Synchronizer.init(transaction, {
+      table: "posts",
+    });
+
+    const batches = [];
+    for await (const batch of synchronizer.synchronize(transaction)) {
+      batches.push(batch);
+    }
+
+    expect(batches).toHaveLength(1);
+    expect(batches[0].rowsInserted).toBe(3);
+
+    // Verify bigint values were preserved
+    const rows = await transaction.any(
+      sql.type(
+        z.object({
+          id: z.coerce.number(),
+          view_count: z.coerce.bigint().nullable(),
+        }),
+      )`
+        SELECT id, view_count FROM posts_intermediate ORDER BY id
+      `,
+    );
+    expect(rows[0].view_count).toBe(9007199254740993n);
+    expect(rows[1].view_count).toBe(9007199254740994n);
+    expect(rows[2].view_count).toBeNull();
+  });
+
+  test("detects differences in bigint columns", async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, view_count BIGINT)
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, view_count BIGINT)
+    `);
+    await transaction.query(sql.unsafe`
+      INSERT INTO posts (name, view_count) VALUES
+        ('a', 9007199254740993),
+        ('b', 100)
+    `);
+    await transaction.query(sql.unsafe`
+      INSERT INTO posts_intermediate (id, name, view_count) VALUES
+        (1, 'a', 9007199254740993),
+        (2, 'b', 200)
+    `);
+
+    const synchronizer = await Synchronizer.init(transaction, {
+      table: "posts",
+    });
+
+    const batches = [];
+    for await (const batch of synchronizer.synchronize(transaction)) {
+      batches.push(batch);
+    }
+
+    expect(batches).toHaveLength(1);
+    expect(batches[0].matchingRows).toBe(1); // id=1 matches (same bigint)
+    expect(batches[0].rowsUpdated).toBe(1); // id=2 has different view_count
+  });
+
+  test("handles updates with NULL values", async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, description TEXT)
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, description TEXT)
+    `);
+    // Source has NULL where target has value, and value where target has NULL
+    await transaction.query(sql.unsafe`
+      INSERT INTO posts (name, description) VALUES ('a', NULL), ('b', 'now has description')
+    `);
+    await transaction.query(sql.unsafe`
+      INSERT INTO posts_intermediate (id, name, description) VALUES
+        (1, 'a', 'had description'),
+        (2, 'b', NULL)
+    `);
+
+    const synchronizer = await Synchronizer.init(transaction, {
+      table: "posts",
+    });
+
+    const batches = [];
+    for await (const batch of synchronizer.synchronize(transaction)) {
+      batches.push(batch);
+    }
+
+    expect(batches).toHaveLength(1);
+    expect(batches[0].rowsUpdated).toBe(2);
+
+    // Verify NULL handling in updates
+    const rows = await transaction.any(
+      sql.type(
+        z.object({
+          id: z.coerce.number(),
+          description: z.string().nullable(),
+        }),
+      )`
+        SELECT id, description FROM posts_intermediate ORDER BY id
+      `,
+    );
+    expect(rows[0].description).toBeNull(); // Was 'had description', now NULL
+    expect(rows[1].description).toBe("now has description"); // Was NULL, now has value
+  });
+
+  test("handles mixed column types", async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts (
+        id BIGSERIAL PRIMARY KEY,
+        name TEXT,
+        view_count BIGINT,
+        rating NUMERIC(3,2),
+        is_published BOOLEAN,
+        created_at TIMESTAMPTZ
+      )
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts_intermediate (
+        id BIGSERIAL PRIMARY KEY,
+        name TEXT,
+        view_count BIGINT,
+        rating NUMERIC(3,2),
+        is_published BOOLEAN,
+        created_at TIMESTAMPTZ
+      )
+    `);
+    await transaction.query(sql.unsafe`
+      INSERT INTO posts (name, view_count, rating, is_published, created_at) VALUES
+        ('post1', 1000, 4.5, true, '2024-01-15 10:30:00+00'),
+        ('post2', NULL, NULL, false, NULL)
+    `);
+
+    const synchronizer = await Synchronizer.init(transaction, {
+      table: "posts",
+    });
+
+    const batches = [];
+    for await (const batch of synchronizer.synchronize(transaction)) {
+      batches.push(batch);
+    }
+
+    expect(batches).toHaveLength(1);
+    expect(batches[0].rowsInserted).toBe(2);
+
+    // Verify all types were preserved
+    const rows = await transaction.any(
+      sql.type(
+        z.object({
+          id: z.coerce.bigint(),
+          name: z.string(),
+          view_count: z.coerce.bigint().nullable(),
+          rating: z.string().nullable(), // NUMERIC comes back as string
+          is_published: z.boolean(),
+        }),
+      )`
+        SELECT id, name, view_count, rating::text, is_published
+        FROM posts_intermediate ORDER BY id
+      `,
+    );
+    expect(rows[0].name).toBe("post1");
+    expect(rows[0].view_count).toBe(1000n);
+    expect(rows[0].rating).toBe("4.50");
+    expect(rows[0].is_published).toBe(true);
+
+    expect(rows[1].name).toBe("post2");
+    expect(rows[1].view_count).toBeNull();
+    expect(rows[1].rating).toBeNull();
+    expect(rows[1].is_published).toBe(false);
+
+    // Verify timestamps match between source and target
+    const sourceTs = await transaction.one(
+      sql.type(z.object({ ts: z.number().nullable() }))`
+        SELECT EXTRACT(EPOCH FROM created_at)::bigint as ts FROM posts WHERE id = 1
+      `,
+    );
+    const targetTs = await transaction.one(
+      sql.type(z.object({ ts: z.number().nullable() }))`
+        SELECT EXTRACT(EPOCH FROM created_at)::bigint as ts FROM posts_intermediate WHERE id = 1
+      `,
+    );
+    expect(targetTs.ts).toBe(sourceTs.ts);
+  });
 });
 
