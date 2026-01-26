@@ -317,8 +317,7 @@ export class Pgslice {
   ): Promise<void> {
     const table = Table.parse(options.table);
     const targetType = options.targetType ?? "intermediate";
-    const target =
-      targetType === "intermediate" ? table.intermediate : table.retired;
+    const target = table[targetType];
 
     if (!(await table.exists(tx))) {
       throw new Error(`Table not found: ${table.toString()}`);
