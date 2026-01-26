@@ -132,9 +132,7 @@ export class Synchronizer {
 
     let startingId: IdValue;
     if (options.start !== undefined) {
-      startingId = /^\d+$/.test(options.start)
-        ? BigInt(options.start)
-        : options.start;
+      startingId = transformIdValue(options.start);
     } else {
       const minId = await sourceTable.minId(tx, primaryKeyColumn);
       if (minId === null) {
