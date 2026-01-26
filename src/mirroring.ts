@@ -3,9 +3,12 @@ import { z } from "zod";
 
 import { Table } from "./table.js";
 
+export type MirroringMode = "intermediate" | "retired";
+
 interface MirroringOptions {
   source: Table;
   target: Table;
+  mode: MirroringMode;
 }
 
 /**
@@ -16,10 +19,12 @@ interface MirroringOptions {
 export class Mirroring {
   readonly #source: Table;
   readonly #target: Table;
+  readonly #mode: MirroringMode;
 
   constructor(options: MirroringOptions) {
     this.#source = options.source;
     this.#target = options.target;
+    this.#mode = options.mode;
   }
 
   /**
@@ -50,11 +55,15 @@ export class Mirroring {
   }
 
   get #functionName() {
-    return sql.identifier([`${this.#source.name}_mirror_to_intermediate`]);
+    const suffix =
+      this.#mode === "intermediate" ? "mirror_to_intermediate" : "mirror_to_retired";
+    return sql.identifier([`${this.#source.name}_${suffix}`]);
   }
 
   get #triggerName() {
-    return sql.identifier([`${this.#source.name}_mirror_trigger`]);
+    const suffix =
+      this.#mode === "intermediate" ? "mirror_trigger" : "retired_mirror_trigger";
+    return sql.identifier([`${this.#source.name}_${suffix}`]);
   }
 
   #buildWhereClause(columns: string[]) {
@@ -91,6 +100,20 @@ export class Mirroring {
     );
   }
 
+  #buildConflictClause(columns: string[], primaryKeyColumns: string[]) {
+    if (this.#mode === "intermediate") {
+      return sql.fragment``;
+    }
+
+    if (primaryKeyColumns.length > 0) {
+      const conflictTarget = this.#buildColumnList(primaryKeyColumns);
+      const setClause = this.#buildSetClause(columns);
+      return sql.fragment` ON CONFLICT (${conflictTarget}) DO UPDATE SET ${setClause}`;
+    }
+
+    return sql.fragment` ON CONFLICT DO NOTHING`;
+  }
+
   #buildFunctionSql(columns: string[], primaryKeyColumns: string[]) {
     const whereColumns =
       primaryKeyColumns.length > 0 ? primaryKeyColumns : columns;
@@ -99,6 +122,7 @@ export class Mirroring {
     const columnList = this.#buildColumnList(columns);
     const newTupleList = this.#buildNewTupleList(columns);
     const targetTable = this.#target.toSqlIdentifier();
+    const conflictClause = this.#buildConflictClause(columns, primaryKeyColumns);
 
     return sql.fragment`
       CREATE OR REPLACE FUNCTION ${this.#functionName}()
@@ -111,7 +135,7 @@ export class Mirroring {
           UPDATE ${targetTable} SET ${setClause} WHERE ${whereClause};
           RETURN NEW;
         ELSIF TG_OP = 'INSERT' THEN
-          INSERT INTO ${targetTable} (${columnList}) VALUES (${newTupleList});
+          INSERT INTO ${targetTable} (${columnList}) VALUES (${newTupleList})${conflictClause};
           RETURN NEW;
         END IF;
         RETURN NULL;

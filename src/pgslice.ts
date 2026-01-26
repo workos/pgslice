@@ -323,7 +323,11 @@ export class Pgslice {
       throw new Error(`Table not found: ${intermediate.toString()}`);
     }
 
-    await new Mirroring({ source: table, target: intermediate }).enable(tx);
+    await new Mirroring({
+      source: table,
+      target: intermediate,
+      mode: "intermediate",
+    }).enable(tx);
   }
 
   /**
@@ -341,7 +345,11 @@ export class Pgslice {
       throw new Error(`Table not found: ${table.toString()}`);
     }
 
-    await new Mirroring({ source: table, target: intermediate }).disable(tx);
+    await new Mirroring({
+      source: table,
+      target: intermediate,
+      mode: "intermediate",
+    }).disable(tx);
   }
 
   /**
