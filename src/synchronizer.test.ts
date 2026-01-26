@@ -849,4 +849,164 @@ describe("Synchronizer.synchronize", () => {
     );
     expect(targetTs.ts).toBe(sourceTs.ts);
   });
+
+  test("handles large BIGINT values in timestamp-like range correctly", async ({
+    transaction,
+  }) => {
+    // This tests that BIGINT values in the range that could be mistaken for timestamps
+    // (500_000_000_000 to 10_000_000_000_000) are treated as plain integers, not timestamps
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, large_value BIGINT)
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, large_value BIGINT)
+    `);
+    // Use values in the "timestamp-like" range
+    await transaction.query(sql.unsafe`
+      INSERT INTO posts (large_value) VALUES
+        (600000000000),
+        (1000000000000),
+        (5000000000000)
+    `);
+
+    const synchronizer = await Synchronizer.init(transaction, {
+      table: "posts",
+    });
+
+    const batches = [];
+    for await (const batch of synchronizer.synchronize(transaction)) {
+      batches.push(batch);
+    }
+
+    expect(batches).toEqual([expect.objectContaining({ rowsInserted: 3 })]);
+
+    // Verify values were preserved as BIGINT, not converted to timestamps
+    const rows = await transaction.any(
+      sql.type(z.object({ id: z.coerce.bigint(), large_value: z.coerce.bigint() }))`
+        SELECT id, large_value FROM posts_intermediate ORDER BY id
+      `,
+    );
+    expect(rows).toEqual([
+      { id: 1n, large_value: 600000000000n },
+      { id: 2n, large_value: 1000000000000n },
+      { id: 3n, large_value: 5000000000000n },
+    ]);
+  });
+
+  test("handles UUID columns", async ({ transaction }) => {
+    // Use BIGSERIAL as PK since PostgreSQL doesn't support MIN/MAX on UUID
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, uuid_col UUID)
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, uuid_col UUID)
+    `);
+    await transaction.query(sql.unsafe`
+      INSERT INTO posts (uuid_col) VALUES
+        ('550e8400-e29b-41d4-a716-446655440000'),
+        ('6ba7b810-9dad-11d1-80b4-00c04fd430c8'),
+        (NULL)
+    `);
+
+    const synchronizer = await Synchronizer.init(transaction, {
+      table: "posts",
+    });
+
+    const batches = [];
+    for await (const batch of synchronizer.synchronize(transaction)) {
+      batches.push(batch);
+    }
+
+    expect(batches).toEqual([expect.objectContaining({ rowsInserted: 3 })]);
+
+    // Verify UUIDs were preserved
+    const rows = await transaction.any(
+      sql.type(z.object({ id: z.coerce.bigint(), uuid_col: z.string().nullable() }))`
+        SELECT id, uuid_col::text FROM posts_intermediate ORDER BY id
+      `,
+    );
+    expect(rows).toEqual([
+      { id: 1n, uuid_col: "550e8400-e29b-41d4-a716-446655440000" },
+      { id: 2n, uuid_col: "6ba7b810-9dad-11d1-80b4-00c04fd430c8" },
+      { id: 3n, uuid_col: null },
+    ]);
+  });
+
+  test("handles DATE columns", async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, event_date DATE)
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, event_date DATE)
+    `);
+    await transaction.query(sql.unsafe`
+      INSERT INTO posts (event_date) VALUES
+        ('2024-01-15'),
+        ('2024-06-20'),
+        (NULL)
+    `);
+
+    const synchronizer = await Synchronizer.init(transaction, {
+      table: "posts",
+    });
+
+    const batches = [];
+    for await (const batch of synchronizer.synchronize(transaction)) {
+      batches.push(batch);
+    }
+
+    expect(batches).toEqual([expect.objectContaining({ rowsInserted: 3 })]);
+
+    // Verify dates were preserved
+    const rows = await transaction.any(
+      sql.type(z.object({ id: z.coerce.bigint(), event_date: z.string().nullable() }))`
+        SELECT id, event_date::text FROM posts_intermediate ORDER BY id
+      `,
+    );
+    expect(rows).toEqual([
+      { id: 1n, event_date: "2024-01-15" },
+      { id: 2n, event_date: "2024-06-20" },
+      { id: 3n, event_date: null },
+    ]);
+  });
+
+  test("handles BYTEA columns", async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, data BYTEA)
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, data BYTEA)
+    `);
+    await transaction.query(sql.unsafe`
+      INSERT INTO posts (data) VALUES
+        (E'\\x48656c6c6f'),
+        (E'\\x576f726c64'),
+        (NULL)
+    `);
+
+    const synchronizer = await Synchronizer.init(transaction, {
+      table: "posts",
+    });
+
+    const batches = [];
+    for await (const batch of synchronizer.synchronize(transaction)) {
+      batches.push(batch);
+    }
+
+    expect(batches).toEqual([expect.objectContaining({ rowsInserted: 3 })]);
+
+    // Verify bytea values match between source and target
+    const sourceRows = await transaction.any(
+      sql.type(z.object({ id: z.coerce.bigint(), data: z.string().nullable() }))`
+        SELECT id, encode(data, 'hex') as data FROM posts ORDER BY id
+      `,
+    );
+    const targetRows = await transaction.any(
+      sql.type(z.object({ id: z.coerce.bigint(), data: z.string().nullable() }))`
+        SELECT id, encode(data, 'hex') as data FROM posts_intermediate ORDER BY id
+      `,
+    );
+
+    expect(targetRows).toEqual(sourceRows);
+  });
 });

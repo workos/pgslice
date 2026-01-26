@@ -139,8 +139,8 @@ export class Filler {
     }
     const primaryKeyColumn = primaryKeyColumns[0];
 
-    // Get columns from source table
-    const columns = await sourceTable.columns(tx);
+    // Get columns from source table (just names - Filler uses INSERT...SELECT which preserves types)
+    const columns = (await sourceTable.columns(tx)).map((c) => c.name);
 
     // Determine starting ID and includeStart flag
     let startingId: IdValue | undefined;

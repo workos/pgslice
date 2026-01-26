@@ -9,6 +9,7 @@ import { z } from "zod";
 
 import type {
   AddPartitionsOptions,
+  ColumnInfo,
   DisableMirroringOptions,
   EnableMirroringOptions,
   FillBatchResult,
@@ -102,7 +103,8 @@ export class Pgslice {
 
     if (options.partition) {
       const columns = await table.columns(tx);
-      if (!columns.includes(options.column)) {
+      const columnInfo = columns.find((c) => c.name === options.column);
+      if (!columnInfo) {
         throw new Error(`Column not found: ${options.column}`);
       }
 
@@ -114,7 +116,7 @@ export class Pgslice {
         tx,
         table,
         intermediate,
-        options.column,
+        columnInfo,
         options.period,
       );
     } else {
@@ -126,7 +128,7 @@ export class Pgslice {
     tx: DatabaseTransactionConnection,
     table: Table,
     intermediate: Table,
-    column: string,
+    columnInfo: ColumnInfo,
     period: Period,
   ): Promise<void> {
     const serverVersionNum = await getServerVersionNum(tx);
@@ -134,7 +136,7 @@ export class Pgslice {
     // Create partitioned table using the appropriate INCLUDING clauses
     const intermediateIdent = intermediate.toSqlIdentifier();
     const tableIdent = table.toSqlIdentifier();
-    const columnIdent = sql.identifier([column]);
+    const columnIdent = sql.identifier([columnInfo.name]);
 
     const includings = [
       sql.fragment`COMMENTS`,
@@ -173,9 +175,9 @@ export class Pgslice {
     // Copy foreign keys
     await this.#copyForeignKeys(tx, table, intermediate);
 
-    // Add metadata comment
-    const cast = await table.columnCast(tx, column);
-    const comment = `column:${column},period:${period},cast:${cast},version:3`;
+    // Add metadata comment - use cast from columnInfo, default to 'date' if not a timestamp type
+    const cast = columnInfo.cast ?? "date";
+    const comment = `column:${columnInfo.name},period:${period},cast:${cast},version:3`;
     await tx.query(
       sql.type(z.object({}))`
         COMMENT ON TABLE ${intermediateIdent} IS ${sql.literalValue(comment)}

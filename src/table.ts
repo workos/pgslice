@@ -5,7 +5,7 @@ import {
   IdentifierSqlToken,
 } from "slonik";
 import { z } from "zod";
-import type { Cast, IdValue } from "./types.js";
+import type { Cast, ColumnInfo, IdValue } from "./types.js";
 import { TableSettings } from "./table-settings.js";
 import { formatDateForSql } from "./sql-utils.js";
 
@@ -40,6 +40,22 @@ function transformIdValue(
 }
 
 const DEFAULT_SCHEMA = "public";
+
+/**
+ * Derives the appropriate Cast type from a PostgreSQL data type string.
+ * Returns null for types that don't require casting for partition operations.
+ */
+function dataTypeToCast(dataType: string): Cast | null {
+  switch (dataType) {
+    case "timestamp with time zone":
+      return "timestamptz";
+    case "timestamp without time zone":
+    case "date":
+      return "date";
+    default:
+      return null;
+  }
+}
 
 /**
  * Gets the server version number.
@@ -137,22 +153,27 @@ export class Table {
   }
 
   /**
-   * Gets the list of column names for this table (excluding generated columns).
+   * Gets column metadata for this table (excluding generated columns).
    */
-  async columns(tx: DatabaseTransactionConnection): Promise<string[]> {
+  async columns(tx: DatabaseTransactionConnection): Promise<ColumnInfo[]> {
     const result = await tx.any(
-      sql.type(z.object({ column_name: z.string() }))`
-        SELECT column_name FROM information_schema.columns
+      sql.type(z.object({ column_name: z.string(), data_type: z.string() }))`
+        SELECT column_name, data_type FROM information_schema.columns
         WHERE table_schema = ${this.schema}
           AND table_name = ${this.name}
           AND is_generated = 'NEVER'
       `,
     );
-    return result.map((row) => row.column_name);
+    return result.map((row) => ({
+      name: row.column_name,
+      dataType: row.data_type,
+      cast: dataTypeToCast(row.data_type),
+    }));
   }
 
   /**
    * Gets the cast type for a column (date or timestamptz).
+   * @deprecated Use columns() instead, which returns ColumnInfo with cast included.
    */
   async columnCast(
     tx: DatabaseTransactionConnection,
@@ -169,9 +190,7 @@ export class Table {
     if (!result) {
       throw new Error(`Column not found: ${column}`);
     }
-    return result.data_type === "timestamp with time zone"
-      ? "timestamptz"
-      : "date";
+    return dataTypeToCast(result.data_type) ?? "date";
   }
 
   /**

@@ -1,7 +1,7 @@
-import { CommonQueryMethods, sql } from "slonik";
+import { CommonQueryMethods, sql, type PrimitiveValueExpression } from "slonik";
 import { z } from "zod";
 import { Table } from "./table.js";
-import type { IdValue, SynchronizeBatchResult, SynchronizeOptions } from "./types.js";
+import type { ColumnInfo, IdValue, SynchronizeBatchResult, SynchronizeOptions } from "./types.js";
 
 /**
  * Transforms a raw ID value from the database into the proper IdValue type.
@@ -22,34 +22,49 @@ function transformIdValue(val: bigint | number | string): IdValue {
 }
 
 /**
- * Check if a number is likely a Unix timestamp in milliseconds.
- * Timestamps after year 2000 are > 946684800000, and we use a threshold
- * that's safely in the timestamp range but above typical integer IDs.
+ * Converts a value to a SQL fragment using the appropriate slonik helper based on column data type.
+ * Uses explicit type information instead of heuristics to properly handle timestamps, dates, etc.
  */
-function isLikelyTimestampMs(val: number): boolean {
-  // Timestamps from ~1990 onwards in milliseconds (> 631152000000)
-  // This threshold is high enough to avoid false positives with regular integers
-  return val > 500_000_000_000 && val < 10_000_000_000_000;
-}
-
-/**
- * Converts a value to a SQL fragment, handling Date objects and timestamps properly.
- * Slonik returns timestamp/timestamptz columns as Unix timestamps in milliseconds.
- */
-function valueToSql(val: unknown) {
+function valueToSql(val: unknown, dataType: string) {
   if (val === null) {
     return sql.fragment`NULL`;
   }
-  if (val instanceof Date) {
-    // Convert Date to ISO string for proper SQL date/timestamp handling
-    return sql.fragment`${val.toISOString()}`;
+
+  // Timestamp types - slonik returns as ms since epoch
+  if (
+    dataType === "timestamp with time zone" ||
+    dataType === "timestamp without time zone"
+  ) {
+    if (typeof val === "number") {
+      return sql.timestamp(new Date(val));
+    }
+    if (val instanceof Date) {
+      return sql.timestamp(val);
+    }
   }
-  // Handle numeric timestamps (slonik returns timestamp/timestamptz as ms since epoch)
-  if (typeof val === "number" && isLikelyTimestampMs(val)) {
-    const date = new Date(val);
-    return sql.fragment`${date.toISOString()}`;
+
+  // Date type - slonik returns as string "YYYY-MM-DD"
+  if (dataType === "date") {
+    if (typeof val === "string") {
+      return sql.date(new Date(val));
+    }
+    if (val instanceof Date) {
+      return sql.date(val);
+    }
   }
-  return sql.fragment`${val as Parameters<typeof sql.fragment>[1]}`;
+
+  // UUID type
+  if (dataType === "uuid" && typeof val === "string") {
+    return sql.uuid(val);
+  }
+
+  // Binary type
+  if (dataType === "bytea" && Buffer.isBuffer(val)) {
+    return sql.binary(val);
+  }
+
+  // All other types - pass directly to slonik
+  return sql.fragment`${val as PrimitiveValueExpression}`;
 }
 
 /**
@@ -61,7 +76,7 @@ interface SynchronizerOptions {
   source: Table;
   target: Table;
   primaryKeyColumn: string;
-  columns: string[];
+  columns: ColumnInfo[];
   windowSize: number;
   startingId: IdValue;
   dryRun: boolean;
@@ -75,7 +90,8 @@ export class Synchronizer {
   readonly #source: Table;
   readonly #target: Table;
   readonly #primaryKeyColumn: string;
-  readonly #columns: string[];
+  readonly #columns: ColumnInfo[];
+  readonly #columnDataTypes: Map<string, string>;
   readonly #windowSize: number;
   readonly #startingId: IdValue;
   readonly #dryRun: boolean;
@@ -85,6 +101,9 @@ export class Synchronizer {
     this.#target = options.target;
     this.#primaryKeyColumn = options.primaryKeyColumn;
     this.#columns = options.columns;
+    this.#columnDataTypes = new Map(
+      options.columns.map((col) => [col.name, col.dataType]),
+    );
     this.#windowSize = options.windowSize;
     this.#startingId = options.startingId;
     this.#dryRun = options.dryRun;
@@ -123,21 +142,21 @@ export class Synchronizer {
     const targetColumns = await targetTable.columns(tx);
 
     // Verify schemas match
-    const sourceCols = new Set(sourceColumns);
-    const targetCols = new Set(targetColumns);
+    const sourceColNames = new Set(sourceColumns.map((c) => c.name));
+    const targetColNames = new Set(targetColumns.map((c) => c.name));
 
     for (const col of sourceColumns) {
-      if (!targetCols.has(col)) {
+      if (!targetColNames.has(col.name)) {
         throw new Error(
-          `Column '${col}' exists in ${sourceTable.toString()} but not in ${targetTable.toString()}`,
+          `Column '${col.name}' exists in ${sourceTable.toString()} but not in ${targetTable.toString()}`,
         );
       }
     }
 
     for (const col of targetColumns) {
-      if (!sourceCols.has(col)) {
+      if (!sourceColNames.has(col.name)) {
         throw new Error(
-          `Column '${col}' exists in ${targetTable.toString()} but not in ${sourceTable.toString()}`,
+          `Column '${col.name}' exists in ${targetTable.toString()} but not in ${sourceTable.toString()}`,
         );
       }
     }
@@ -146,7 +165,7 @@ export class Synchronizer {
     let primaryKeyColumn: string;
     if (options.primaryKey) {
       primaryKeyColumn = options.primaryKey;
-      if (!sourceCols.has(primaryKeyColumn)) {
+      if (!sourceColNames.has(primaryKeyColumn)) {
         throw new Error(
           `Primary key '${primaryKeyColumn}' not found in source table`,
         );
@@ -325,7 +344,7 @@ export class Synchronizer {
   ): Promise<readonly Record<string, unknown>[]> {
     const pkCol = sql.identifier([this.#primaryKeyColumn]);
     const columnList = sql.join(
-      this.#columns.map((col) => sql.identifier([col])),
+      this.#columns.map((col) => sql.identifier([col.name])),
       sql.fragment`, `,
     );
 
@@ -354,7 +373,7 @@ export class Synchronizer {
   ): Promise<readonly Record<string, unknown>[]> {
     const pkCol = sql.identifier([this.#primaryKeyColumn]);
     const columnList = sql.join(
-      this.#columns.map((col) => sql.identifier([col])),
+      this.#columns.map((col) => sql.identifier([col.name])),
       sql.fragment`, `,
     );
 
@@ -375,8 +394,8 @@ export class Synchronizer {
     targetRow: Record<string, unknown>,
   ): boolean {
     for (const col of this.#columns) {
-      const sourceVal = sourceRow[col];
-      const targetVal = targetRow[col];
+      const sourceVal = sourceRow[col.name];
+      const targetVal = targetRow[col.name];
 
       // Handle BigInt comparison
       if (typeof sourceVal === "bigint" || typeof targetVal === "bigint") {
@@ -407,11 +426,13 @@ export class Synchronizer {
     row: Record<string, unknown>,
   ): Promise<void> {
     const columnList = sql.join(
-      this.#columns.map((col) => sql.identifier([col])),
+      this.#columns.map((col) => sql.identifier([col.name])),
       sql.fragment`, `,
     );
     const valueList = sql.join(
-      this.#columns.map((col) => valueToSql(row[col])),
+      this.#columns.map((col) =>
+        valueToSql(row[col.name], col.dataType),
+      ),
       sql.fragment`, `,
     );
 
@@ -431,10 +452,10 @@ export class Synchronizer {
     const pkValue = row[this.#primaryKeyColumn];
 
     const setClauses = this.#columns
-      .filter((col) => col !== this.#primaryKeyColumn)
+      .filter((col) => col.name !== this.#primaryKeyColumn)
       .map((col) => {
-        const val = row[col];
-        return sql.fragment`${sql.identifier([col])} = ${valueToSql(val)}`;
+        const val = row[col.name];
+        return sql.fragment`${sql.identifier([col.name])} = ${valueToSql(val, col.dataType)}`;
       });
 
     if (setClauses.length === 0) {

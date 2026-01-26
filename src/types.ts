@@ -21,6 +21,15 @@ export type Period = (typeof PERIODS)[number];
 export type Cast = "date" | "timestamptz";
 
 /**
+ * Column metadata from the database.
+ */
+export interface ColumnInfo {
+  name: string;
+  dataType: string;
+  cast: Cast | null;
+}
+
+/**
  * SQL formats used for partition naming by period.
  */
 export const SQL_FORMAT = {

@@ -152,6 +152,7 @@ describe("Pgslice.prep", () => {
         sql.type(z.object({ conname: z.string() }))`
           SELECT conname FROM pg_constraint
           WHERE conrelid = 'public.posts_intermediate'::regclass AND contype = 'f'
+          ORDER BY conname
         `,
       );
       expect(result).toEqual([

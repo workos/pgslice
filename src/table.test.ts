@@ -153,3 +153,63 @@ describe("Table.minId", () => {
     expect(minId).toBe(2n);
   });
 });
+
+describe("Table.columns", () => {
+  test("returns column info with name and data type", async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table (
+        id BIGSERIAL PRIMARY KEY,
+        name TEXT,
+        created_at TIMESTAMPTZ
+      )
+    `);
+
+    const table = Table.parse("test_table");
+    const columns = await table.columns(transaction);
+
+    expect(columns).toEqual(
+      expect.arrayContaining([
+        { name: "id", dataType: "bigint", cast: null },
+        { name: "name", dataType: "text", cast: null },
+        { name: "created_at", dataType: "timestamp with time zone", cast: "timestamptz" },
+      ]),
+    );
+  });
+
+  test("returns proper cast for timestamp types", async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table (
+        id BIGSERIAL PRIMARY KEY,
+        date_col DATE,
+        ts_col TIMESTAMP,
+        tstz_col TIMESTAMPTZ
+      )
+    `);
+
+    const table = Table.parse("test_table");
+    const columns = await table.columns(transaction);
+
+    const dateCol = columns.find((c) => c.name === "date_col");
+    const tsCol = columns.find((c) => c.name === "ts_col");
+    const tstzCol = columns.find((c) => c.name === "tstz_col");
+
+    expect(dateCol?.cast).toBe("date");
+    expect(tsCol?.cast).toBe("date");
+    expect(tstzCol?.cast).toBe("timestamptz");
+  });
+
+  test("excludes generated columns", async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table (
+        id BIGSERIAL PRIMARY KEY,
+        name TEXT,
+        upper_name TEXT GENERATED ALWAYS AS (UPPER(name)) STORED
+      )
+    `);
+
+    const table = Table.parse("test_table");
+    const columns = await table.columns(transaction);
+
+    expect(columns.map((c) => c.name)).toEqual(["id", "name"]);
+  });
+});

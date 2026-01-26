@@ -26,7 +26,7 @@ export class Mirroring {
    * Enables mirroring by creating a trigger function and trigger on the source table.
    */
   async enable(tx: DatabaseTransactionConnection): Promise<void> {
-    const columns = await this.#source.columns(tx);
+    const columns = (await this.#source.columns(tx)).map((c) => c.name);
     const primaryKeyColumns = await this.#source.primaryKey(tx);
 
     const functionSql = this.#buildFunctionSql(columns, primaryKeyColumns);
