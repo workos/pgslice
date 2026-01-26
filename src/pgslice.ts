@@ -15,6 +15,8 @@ import type {
   FillOptions,
   Period,
   PrepOptions,
+  SynchronizeBatchResult,
+  SynchronizeOptions,
 } from "./types.js";
 import { isPeriod } from "./types.js";
 import { Table, getServerVersionNum } from "./table.js";
@@ -22,6 +24,7 @@ import { DateRanges } from "./date-ranges.js";
 import { formatDateForSql, rawSql } from "./sql-utils.js";
 import { Mirroring } from "./mirroring.js";
 import { Filler } from "./filler.js";
+import { Synchronizer } from "./synchronizer.js";
 
 interface PgsliceOptions {
   dryRun?: boolean;
@@ -350,6 +353,25 @@ export class Pgslice {
     const filler = await this.start((tx) => Filler.init(tx, options));
 
     for await (const batch of filler.fill(this.connection)) {
+      yield batch;
+    }
+  }
+
+  /**
+   * Synchronizes data between a source table and its intermediate table.
+   * Detects and fixes discrepancies (missing, different, or extra rows).
+   *
+   * @param options - Synchronize options including table name and batch configuration
+   * @yields SynchronizeBatchResult after each batch is processed
+   */
+  async *synchronize(
+    options: SynchronizeOptions,
+  ): AsyncGenerator<SynchronizeBatchResult> {
+    const synchronizer = await this.start((tx) =>
+      Synchronizer.init(tx, options),
+    );
+
+    for await (const batch of synchronizer.synchronize(this.connection)) {
       yield batch;
     }
   }

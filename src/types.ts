@@ -104,3 +104,28 @@ export interface FillBatchResult {
   startId: IdValue | null;
   endId: IdValue | null;
 }
+
+/**
+ * Options for the `synchronize` command.
+ */
+export interface SynchronizeOptions {
+  table: string;
+  primaryKey?: string;
+  start?: string;
+  windowSize?: number;
+  dryRun?: boolean;
+}
+
+/**
+ * Result of a single synchronize batch operation.
+ */
+export interface SynchronizeBatchResult {
+  batchNumber: number;
+  batchDurationMs: number;
+  primaryKeyRange: { start: IdValue; end: IdValue };
+  rowsCompared: number;
+  matchingRows: number;
+  rowsInserted: number;
+  rowsUpdated: number;
+  rowsDeleted: number;
+}
