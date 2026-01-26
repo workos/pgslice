@@ -68,7 +68,9 @@ describe("UnswapCommand", () => {
 
       expect(exitCode).toBe(1);
       const output = commandContext.stderr.read()?.toString();
-      expect(output).toContain("Table already exists: public.posts_intermediate");
+      expect(output).toContain(
+        "Table already exists: public.posts_intermediate",
+      );
     });
   });
 
