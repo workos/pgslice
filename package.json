@@ -14,6 +14,11 @@
       "types": "./dist/src/index.d.ts"
     }
   },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/src/testing/**"
+  ],
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
