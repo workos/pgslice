@@ -56,13 +56,17 @@ export class Mirroring {
 
   get #functionName() {
     const suffix =
-      this.#mode === "intermediate" ? "mirror_to_intermediate" : "mirror_to_retired";
+      this.#mode === "intermediate"
+        ? "mirror_to_intermediate"
+        : "mirror_to_retired";
     return sql.identifier([`${this.#source.name}_${suffix}`]);
   }
 
   get #triggerName() {
     const suffix =
-      this.#mode === "intermediate" ? "mirror_trigger" : "retired_mirror_trigger";
+      this.#mode === "intermediate"
+        ? "mirror_trigger"
+        : "retired_mirror_trigger";
     return sql.identifier([`${this.#source.name}_${suffix}`]);
   }
 
@@ -122,7 +126,10 @@ export class Mirroring {
     const columnList = this.#buildColumnList(columns);
     const newTupleList = this.#buildNewTupleList(columns);
     const targetTable = this.#target.toSqlIdentifier();
-    const conflictClause = this.#buildConflictClause(columns, primaryKeyColumns);
+    const conflictClause = this.#buildConflictClause(
+      columns,
+      primaryKeyColumns,
+    );
 
     return sql.fragment`
       CREATE OR REPLACE FUNCTION ${this.#functionName}()
