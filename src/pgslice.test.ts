@@ -702,3 +702,79 @@ describe("Pgslice.addPartitions", () => {
     });
   });
 });
+
+describe("Pgslice.synchronize", () => {
+  test("synchronizes data", async ({ pgslice, transaction }) => {
+    // Create source table with data
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
+    `);
+    await transaction.query(sql.unsafe`
+      INSERT INTO posts (name) VALUES ('a'), ('b'), ('c')
+    `);
+
+    // Create intermediate table
+    await pgslice.prep(transaction, {
+      table: "posts",
+      partition: false,
+    });
+
+    // Fill initial data
+    for await (const _batch of pgslice.fill({ table: "posts" })) {
+      // consume
+    }
+
+    // Modify source to create a difference
+    await transaction.query(sql.unsafe`
+      UPDATE posts SET name = 'updated_a' WHERE id = 1
+    `);
+
+    // Synchronize
+    const batches = [];
+    for await (const batch of pgslice.synchronize({ table: "posts" })) {
+      batches.push(batch);
+    }
+
+    expect(batches).toHaveLength(1);
+    expect(batches[0].rowsUpdated).toBe(1);
+
+    // Verify the difference was fixed
+    const row = await transaction.one(
+      sql.type(z.object({ name: z.string() }))`
+        SELECT name FROM posts_intermediate WHERE id = 1
+      `,
+    );
+    expect(row.name).toBe("updated_a");
+  });
+
+  test("throws for missing source table", async ({ pgslice, transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
+    `);
+
+    const error = await (async () => {
+      for await (const _batch of pgslice.synchronize({ table: "posts" })) {
+        // should not reach here
+      }
+    })().catch((e) => e);
+
+    expect(error.message).toBe("Table not found: public.posts");
+  });
+
+  test("throws for missing target table", async ({ pgslice, transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
+    `);
+    await transaction.query(sql.unsafe`
+      INSERT INTO posts (name) VALUES ('test')
+    `);
+
+    const error = await (async () => {
+      for await (const _batch of pgslice.synchronize({ table: "posts" })) {
+        // should not reach here
+      }
+    })().catch((e) => e);
+
+    expect(error.message).toBe("Table not found: public.posts_intermediate");
+  });
+});
