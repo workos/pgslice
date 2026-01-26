@@ -2,7 +2,12 @@ import { CommonQueryMethods, sql } from "slonik";
 import { z } from "zod";
 import { Table } from "./table.js";
 import { valueToSql } from "./sql-utils.js";
-import type { ColumnInfo, IdValue, SynchronizeBatchResult, SynchronizeOptions } from "./types.js";
+import type {
+  ColumnInfo,
+  IdValue,
+  SynchronizeBatchResult,
+  SynchronizeOptions,
+} from "./types.js";
 
 /**
  * Transforms a raw ID value from the database into the proper IdValue type.
@@ -80,7 +85,6 @@ export class Synchronizer {
     const sourceTable = table;
     const targetTable = table.intermediate();
 
-    // Verify both tables exist
     if (!(await sourceTable.exists(tx))) {
       throw new Error(`Table not found: ${sourceTable.toString()}`);
     }
@@ -88,11 +92,9 @@ export class Synchronizer {
       throw new Error(`Table not found: ${targetTable.toString()}`);
     }
 
-    // Get columns from both tables (excluding generated columns)
     const sourceColumns = await sourceTable.columns(tx);
     const targetColumns = await targetTable.columns(tx);
 
-    // Verify schemas match
     const sourceColNames = new Set(sourceColumns.map((c) => c.name));
     const targetColNames = new Set(targetColumns.map((c) => c.name));
 
@@ -112,7 +114,6 @@ export class Synchronizer {
       }
     }
 
-    // Determine primary key
     let primaryKeyColumn: string;
     if (options.primaryKey) {
       primaryKeyColumn = options.primaryKey;
@@ -124,17 +125,13 @@ export class Synchronizer {
     } else {
       const pkColumns = await sourceTable.primaryKey(tx);
       if (pkColumns.length === 0) {
-        throw new Error(
-          "Primary key not found. Specify with --primary-key",
-        );
+        throw new Error("Primary key not found. Specify with --primary-key");
       }
       primaryKeyColumn = pkColumns[0];
     }
 
-    // Determine starting ID
     let startingId: IdValue;
     if (options.start !== undefined) {
-      // Parse as bigint if numeric, otherwise keep as string (ULID)
       startingId = /^\d+$/.test(options.start)
         ? BigInt(options.start)
         : options.start;
@@ -173,7 +170,6 @@ export class Synchronizer {
       batchNumber++;
       const batchStartTime = performance.now();
 
-      // Fetch batch from source
       const sourceRows = await this.#fetchBatch(
         connection,
         this.#source,
@@ -181,15 +177,15 @@ export class Synchronizer {
         includeStart,
       );
 
-      // Stop if no rows returned
       if (sourceRows.length === 0) {
         break;
       }
 
       const firstPk = sourceRows[0][this.#primaryKeyColumn] as IdValue;
-      const lastPk = sourceRows[sourceRows.length - 1][this.#primaryKeyColumn] as IdValue;
+      const lastPk = sourceRows[sourceRows.length - 1][
+        this.#primaryKeyColumn
+      ] as IdValue;
 
-      // Fetch target rows in the same range
       const targetRows = await this.#fetchRowsByRange(
         connection,
         this.#target,
@@ -197,14 +193,12 @@ export class Synchronizer {
         lastPk,
       );
 
-      // Build lookup map for target rows
       const targetRowsByPk = new Map<string, Record<string, unknown>>();
       for (const row of targetRows) {
         const pk = this.#serializePk(row[this.#primaryKeyColumn] as IdValue);
         targetRowsByPk.set(pk, row);
       }
 
-      // Compare and track differences
       let matchingRows = 0;
       let rowsInserted = 0;
       let rowsUpdated = 0;
@@ -220,27 +214,22 @@ export class Synchronizer {
         const targetRow = targetRowsByPk.get(pkKey);
 
         if (targetRow === undefined) {
-          // Missing in target - INSERT
           rowsInserted++;
           if (!this.#dryRun) {
             await this.#insertRow(connection, sourceRow);
           }
         } else if (this.#rowsDiffer(sourceRow, targetRow)) {
-          // Rows differ - UPDATE
           rowsUpdated++;
           if (!this.#dryRun) {
             await this.#updateRow(connection, sourceRow);
           }
         } else {
-          // Rows match
           matchingRows++;
         }
       }
 
-      // Check for extra rows in target (in target but not in source)
       for (const [pkKey, _targetRow] of targetRowsByPk) {
         if (!sourcePks.has(pkKey)) {
-          // Extra row in target - DELETE
           rowsDeleted++;
           if (!this.#dryRun) {
             const pk = this.#deserializePk(pkKey);
@@ -299,9 +288,7 @@ export class Synchronizer {
       sql.fragment`, `,
     );
 
-    const operator = includeStart
-      ? sql.fragment`>=`
-      : sql.fragment`>`;
+    const operator = includeStart ? sql.fragment`>=` : sql.fragment`>`;
 
     const result = await connection.any(
       sql.type(rowSchema)`
@@ -348,7 +335,6 @@ export class Synchronizer {
       const sourceVal = sourceRow[col.name];
       const targetVal = targetRow[col.name];
 
-      // Handle BigInt comparison
       if (typeof sourceVal === "bigint" || typeof targetVal === "bigint") {
         if (String(sourceVal) !== String(targetVal)) {
           return true;
@@ -356,7 +342,6 @@ export class Synchronizer {
         continue;
       }
 
-      // Handle Date comparison
       if (sourceVal instanceof Date && targetVal instanceof Date) {
         if (sourceVal.getTime() !== targetVal.getTime()) {
           return true;
@@ -364,7 +349,6 @@ export class Synchronizer {
         continue;
       }
 
-      // Default comparison
       if (sourceVal !== targetVal) {
         return true;
       }
@@ -381,9 +365,7 @@ export class Synchronizer {
       sql.fragment`, `,
     );
     const valueList = sql.join(
-      this.#columns.map((col) =>
-        valueToSql(row[col.name], col.dataType),
-      ),
+      this.#columns.map((col) => valueToSql(row[col.name], col.dataType)),
       sql.fragment`, `,
     );
 
@@ -424,10 +406,7 @@ export class Synchronizer {
     );
   }
 
-  async #deleteRow(
-    connection: CommonQueryMethods,
-    pk: IdValue,
-  ): Promise<void> {
+  async #deleteRow(connection: CommonQueryMethods, pk: IdValue): Promise<void> {
     const pkCol = sql.identifier([this.#primaryKeyColumn]);
 
     await connection.query(
