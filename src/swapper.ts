@@ -84,17 +84,14 @@ export class Swapper {
    * Validates that the required tables exist and conflicting table doesn't.
    */
   async #validateTables(tx: DatabaseTransactionConnection): Promise<void> {
-    // Original table must always exist
     if (!(await this.#table.exists(tx))) {
       throw new Error(`Table not found: ${this.#table.toString()}`);
     }
 
-    // Source table must exist (intermediate for forward, retired for reverse)
     if (!(await this.#sourceTable.exists(tx))) {
       throw new Error(`Table not found: ${this.#sourceTable.toString()}`);
     }
 
-    // Target table must NOT exist (retired for forward, intermediate for reverse)
     if (await this.#targetTable.exists(tx)) {
       throw new Error(`Table already exists: ${this.#targetTable.toString()}`);
     }
@@ -125,14 +122,12 @@ export class Swapper {
    * Reverse: original → intermediate, retired → original
    */
   async #renameTables(tx: DatabaseTransactionConnection): Promise<void> {
-    // Rename original to target (retired for forward, intermediate for reverse)
     await tx.query(
       sql.type(z.object({}))`
         ALTER TABLE ${this.#table.toSqlIdentifier()} RENAME TO ${sql.identifier([this.#targetTable.name])}
       `,
     );
 
-    // Rename source to original (intermediate for forward, retired for reverse)
     await tx.query(
       sql.type(z.object({}))`
         ALTER TABLE ${this.#sourceTable.toSqlIdentifier()} RENAME TO ${sql.identifier([this.#table.name])}
@@ -145,10 +140,7 @@ export class Swapper {
    * After rename, sequences are attached to the target table, so query from there.
    */
   async #updateSequences(tx: DatabaseTransactionConnection): Promise<void> {
-    // After rename, the sequences are still attached to the target table
-    // (retired for forward, intermediate for reverse)
-    const sequences = await this.#targetTable.sequences(tx);
-    for (const seq of sequences) {
+    for (const seq of await this.#targetTable.sequences(tx)) {
       await tx.query(
         sql.type(z.object({}))`
           ALTER SEQUENCE ${sql.identifier([seq.sequenceSchema, seq.sequenceName])}
@@ -162,16 +154,13 @@ export class Swapper {
    * Enables the appropriate mirroring trigger after renaming.
    * Forward: enables retired trigger (mirrors from new main table to retired)
    * Reverse: enables intermediate trigger (mirrors from new main table to intermediate)
-   *
-   * Note: The Ruby implementation has a bug where unswap doesn't re-enable
-   * the intermediate trigger. This implementation fixes that bug.
    */
   async #enableMirroring(tx: DatabaseTransactionConnection): Promise<void> {
     const mode = this.#direction === "forward" ? "retired" : "intermediate";
-    const target =
-      this.#direction === "forward" ? this.#retired : this.#intermediate;
 
-    // After swap, table now refers to the new main table
-    await new Mirroring({ source: this.#table, mode }).enable(tx, target);
+    await new Mirroring({ source: this.#table, mode }).enable(
+      tx,
+      this.#targetTable,
+    );
   }
 }
