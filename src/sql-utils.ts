@@ -35,7 +35,6 @@ export function valueToSql(val: unknown, dataType: string) {
     return sql.fragment`NULL`;
   }
 
-  // Timestamp types - slonik returns as ms since epoch
   if (
     dataType === "timestamp with time zone" ||
     dataType === "timestamp without time zone"
@@ -48,7 +47,6 @@ export function valueToSql(val: unknown, dataType: string) {
     }
   }
 
-  // Date type - slonik returns as string "YYYY-MM-DD"
   if (dataType === "date") {
     if (typeof val === "string") {
       return sql.date(new Date(val));
@@ -58,16 +56,13 @@ export function valueToSql(val: unknown, dataType: string) {
     }
   }
 
-  // UUID type
   if (dataType === "uuid" && typeof val === "string") {
     return sql.uuid(val);
   }
 
-  // Binary type
   if (dataType === "bytea" && Buffer.isBuffer(val)) {
     return sql.binary(val);
   }
 
-  // All other types - pass directly to slonik
   return sql.fragment`${val as PrimitiveValueExpression}`;
 }
