@@ -2,7 +2,12 @@ import { CommonQueryMethods, sql } from "slonik";
 import { z } from "zod";
 import { Table } from "./table.js";
 import { advanceDate, parsePartitionDate } from "./date-ranges.js";
-import type { FillBatchResult, FillOptions, IdValue, TimeFilter } from "./types.js";
+import type {
+  FillBatchResult,
+  FillOptions,
+  IdValue,
+  TimeFilter,
+} from "./types.js";
 import { formatDateForSql } from "./sql-utils.js";
 
 /**

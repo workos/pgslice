@@ -228,7 +228,11 @@ describe("DateRanges", () => {
       });
 
       const result = [...ranges];
-      expect(result.map((r) => r.suffix)).toEqual(["202511", "202512", "202601"]);
+      expect(result.map((r) => r.suffix)).toEqual([
+        "202511",
+        "202512",
+        "202601",
+      ]);
     });
 
     it("handles only future partitions", () => {
@@ -240,7 +244,11 @@ describe("DateRanges", () => {
       });
 
       const result = [...ranges];
-      expect(result.map((r) => r.suffix)).toEqual(["202601", "202602", "202603"]);
+      expect(result.map((r) => r.suffix)).toEqual([
+        "202601",
+        "202602",
+        "202603",
+      ]);
     });
   });
 });

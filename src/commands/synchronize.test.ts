@@ -104,10 +104,7 @@ describe("SynchronizeCommand", () => {
         INSERT INTO posts_intermediate (id, name) VALUES (1, 'a'), (2, 'b'), (3, 'c')
       `);
 
-      const exitCode = await cli.run(
-        ["synchronize", "posts"],
-        commandContext,
-      );
+      const exitCode = await cli.run(["synchronize", "posts"], commandContext);
 
       expect(exitCode).toBe(0);
 
@@ -132,10 +129,7 @@ describe("SynchronizeCommand", () => {
         INSERT INTO posts (name) VALUES ('a'), ('b')
       `);
 
-      const exitCode = await cli.run(
-        ["synchronize", "posts"],
-        commandContext,
-      );
+      const exitCode = await cli.run(["synchronize", "posts"], commandContext);
 
       expect(exitCode).toBe(0);
 
@@ -144,11 +138,7 @@ describe("SynchronizeCommand", () => {
       expect(stderr).toContain("Missing rows: 2");
     });
 
-    test("shows dry run mode", async ({
-      cli,
-      commandContext,
-      transaction,
-    }) => {
+    test("shows dry run mode", async ({ cli, commandContext, transaction }) => {
       await transaction.query(sql.unsafe`
         INSERT INTO posts (name) VALUES ('a')
       `);
@@ -200,10 +190,7 @@ describe("SynchronizeCommand", () => {
         CREATE TABLE posts_intermediate (id INTEGER PRIMARY KEY, name TEXT)
       `);
 
-      const exitCode = await cli.run(
-        ["synchronize", "posts"],
-        commandContext,
-      );
+      const exitCode = await cli.run(["synchronize", "posts"], commandContext);
 
       expect(exitCode).toBe(1);
 
@@ -223,10 +210,7 @@ describe("SynchronizeCommand", () => {
         INSERT INTO posts (name) VALUES ('test')
       `);
 
-      const exitCode = await cli.run(
-        ["synchronize", "posts"],
-        commandContext,
-      );
+      const exitCode = await cli.run(["synchronize", "posts"], commandContext);
 
       expect(exitCode).toBe(1);
 
@@ -246,10 +230,7 @@ describe("SynchronizeCommand", () => {
         CREATE TABLE posts_intermediate (id INTEGER PRIMARY KEY, name TEXT)
       `);
 
-      const exitCode = await cli.run(
-        ["synchronize", "posts"],
-        commandContext,
-      );
+      const exitCode = await cli.run(["synchronize", "posts"], commandContext);
 
       expect(exitCode).toBe(1);
 

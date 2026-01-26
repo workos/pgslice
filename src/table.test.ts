@@ -155,7 +155,9 @@ describe("Table.minId", () => {
 });
 
 describe("Table.columns", () => {
-  test("returns column info with name and data type", async ({ transaction }) => {
+  test("returns column info with name and data type", async ({
+    transaction,
+  }) => {
     await transaction.query(sql.unsafe`
       CREATE TABLE test_table (
         id BIGSERIAL PRIMARY KEY,
@@ -171,7 +173,11 @@ describe("Table.columns", () => {
       expect.arrayContaining([
         { name: "id", dataType: "bigint", cast: null },
         { name: "name", dataType: "text", cast: null },
-        { name: "created_at", dataType: "timestamp with time zone", cast: "timestamptz" },
+        {
+          name: "created_at",
+          dataType: "timestamp with time zone",
+          cast: "timestamptz",
+        },
       ]),
     );
   });
