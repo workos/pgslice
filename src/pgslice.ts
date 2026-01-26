@@ -307,32 +307,31 @@ export class Pgslice {
   }
 
   /**
-   * Enables mirroring triggers from a table to its intermediate table.
+   * Enables mirroring triggers from a table to its intermediate or retired table.
    * This ensures that INSERT, UPDATE, and DELETE operations on the source
-   * table are automatically replicated to the intermediate table.
+   * table are automatically replicated to the target table.
    */
   async enableMirroring(
     tx: DatabaseTransactionConnection,
     options: EnableMirroringOptions,
   ): Promise<void> {
     const table = Table.parse(options.table);
-    const intermediate = table.intermediate;
+    const targetType = options.targetType ?? "intermediate";
+    const target =
+      targetType === "intermediate" ? table.intermediate : table.retired;
 
     if (!(await table.exists(tx))) {
       throw new Error(`Table not found: ${table.toString()}`);
     }
-    if (!(await intermediate.exists(tx))) {
-      throw new Error(`Table not found: ${intermediate.toString()}`);
+    if (!(await target.exists(tx))) {
+      throw new Error(`Table not found: ${target.toString()}`);
     }
 
-    await new Mirroring({ source: table, mode: "intermediate" }).enable(
-      tx,
-      intermediate,
-    );
+    await new Mirroring({ source: table, targetType }).enable(tx, target);
   }
 
   /**
-   * Disables mirroring triggers from a table to its intermediate table.
+   * Disables mirroring triggers from a table to its intermediate or retired table.
    * This removes the triggers that were created by enableMirroring.
    */
   async disableMirroring(
@@ -340,12 +339,13 @@ export class Pgslice {
     options: DisableMirroringOptions,
   ): Promise<void> {
     const table = Table.parse(options.table);
+    const targetType = options.targetType ?? "intermediate";
 
     if (!(await table.exists(tx))) {
       throw new Error(`Table not found: ${table.toString()}`);
     }
 
-    await new Mirroring({ source: table, mode: "intermediate" }).disable(tx);
+    await new Mirroring({ source: table, targetType }).disable(tx);
   }
 
   /**

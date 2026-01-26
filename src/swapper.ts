@@ -111,9 +111,10 @@ export class Swapper {
    * Reverse: disables retired trigger
    */
   async #disableOldMirroring(tx: DatabaseTransactionConnection): Promise<void> {
-    const mode = this.#direction === "forward" ? "intermediate" : "retired";
+    const targetType =
+      this.#direction === "forward" ? "intermediate" : "retired";
 
-    await new Mirroring({ source: this.#table, mode }).disable(tx);
+    await new Mirroring({ source: this.#table, targetType }).disable(tx);
   }
 
   /**
@@ -156,9 +157,10 @@ export class Swapper {
    * Reverse: enables intermediate trigger (mirrors from new main table to intermediate)
    */
   async #enableNewMirroring(tx: DatabaseTransactionConnection): Promise<void> {
-    const mode = this.#direction === "forward" ? "retired" : "intermediate";
+    const targetType =
+      this.#direction === "forward" ? "retired" : "intermediate";
 
-    await new Mirroring({ source: this.#table, mode }).enable(
+    await new Mirroring({ source: this.#table, targetType }).enable(
       tx,
       this.#targetTable,
     );

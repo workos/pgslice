@@ -65,11 +65,17 @@ export interface AddPartitionsOptions {
   tablespace?: string;
 }
 
+import type { MirroringTargetType } from "./mirroring.js";
+
+// Re-export for convenience
+export type { MirroringTargetType };
+
 /**
  * Options for the `enable_mirroring` command.
  */
 export interface EnableMirroringOptions {
   table: string;
+  targetType?: MirroringTargetType;
 }
 
 /**
@@ -77,6 +83,7 @@ export interface EnableMirroringOptions {
  */
 export interface DisableMirroringOptions {
   table: string;
+  targetType?: MirroringTargetType;
 }
 
 /**

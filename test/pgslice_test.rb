@@ -233,10 +233,12 @@ class PgSliceTest < Minitest::Test
 
     # Retired mirroring trigger is automatically created during swap
     # Verify it exists by checking that we can disable it
-    run_command "disable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers disabled for Posts/
+    output = run_command "disable_retired_mirroring Posts"
+    assert_match(/Retired mirroring triggers disabled for Posts/, output)
 
     # Now enable it again
-    run_command "enable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers enabled for Posts/
+    output = run_command "enable_retired_mirroring Posts"
+    assert_match(/Retired mirroring triggers enabled for Posts/, output)
 
     run_command "unswap Posts"
     run_command "unprep Posts"
@@ -254,13 +256,16 @@ class PgSliceTest < Minitest::Test
 
     # Retired mirroring trigger is automatically created during swap
     # Disable it
-    run_command "disable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers disabled for Posts/
+    output = run_command "disable_retired_mirroring Posts"
+    assert_match(/Retired mirroring triggers disabled for Posts/, output)
 
     # Re-enable it
-    run_command "enable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers enabled for Posts/
+    output = run_command "enable_retired_mirroring Posts"
+    assert_match(/Retired mirroring triggers enabled for Posts/, output)
 
     # Disable it again
-    run_command "disable_retired_mirroring Posts", expected_stderr: /Retired mirroring triggers disabled for Posts/
+    output = run_command "disable_retired_mirroring Posts"
+    assert_match(/Retired mirroring triggers disabled for Posts/, output)
 
     run_command "unswap Posts"
     run_command "unprep Posts"

@@ -3,11 +3,11 @@ import { z } from "zod";
 
 import { Table } from "./table.js";
 
-export type MirroringMode = "intermediate" | "retired";
+export type MirroringTargetType = "intermediate" | "retired";
 
 interface MirroringOptions {
   source: Table;
-  mode: MirroringMode;
+  targetType: MirroringTargetType;
 }
 
 /**
@@ -17,11 +17,11 @@ interface MirroringOptions {
  */
 export class Mirroring {
   readonly #source: Table;
-  readonly #mode: MirroringMode;
+  readonly #targetType: MirroringTargetType;
 
   constructor(options: MirroringOptions) {
     this.#source = options.source;
-    this.#mode = options.mode;
+    this.#targetType = options.targetType;
   }
 
   /**
@@ -55,7 +55,7 @@ export class Mirroring {
 
   get #functionName() {
     const suffix =
-      this.#mode === "intermediate"
+      this.#targetType === "intermediate"
         ? "mirror_to_intermediate"
         : "mirror_to_retired";
     return sql.identifier([`${this.#source.name}_${suffix}`]);
@@ -63,7 +63,7 @@ export class Mirroring {
 
   get #triggerName() {
     const suffix =
-      this.#mode === "intermediate"
+      this.#targetType === "intermediate"
         ? "mirror_trigger"
         : "retired_mirror_trigger";
     return sql.identifier([`${this.#source.name}_${suffix}`]);
@@ -104,7 +104,7 @@ export class Mirroring {
   }
 
   #buildConflictClause(columns: string[], primaryKeyColumns: string[]) {
-    if (this.#mode === "intermediate") {
+    if (this.#targetType === "intermediate") {
       return sql.fragment``;
     }
 
