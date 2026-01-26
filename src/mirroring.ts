@@ -128,7 +128,7 @@ export class Mirroring {
     const setClause = this.#buildSetClause(columns);
     const columnList = this.#buildColumnList(columns);
     const newTupleList = this.#buildNewTupleList(columns);
-    const targetTable = target.toSqlIdentifier();
+    const targetTable = target.sqlIdentifier;
     const conflictClause = this.#buildConflictClause(
       columns,
       primaryKeyColumns,
@@ -156,14 +156,14 @@ export class Mirroring {
 
   get #dropTriggerSql() {
     return sql.fragment`
-      DROP TRIGGER IF EXISTS ${this.#triggerName} ON ${this.#source.toSqlIdentifier()}
+      DROP TRIGGER IF EXISTS ${this.#triggerName} ON ${this.#source.sqlIdentifier}
     `;
   }
 
   get #createTriggerSql() {
     return sql.fragment`
       CREATE TRIGGER ${this.#triggerName}
-      AFTER INSERT OR UPDATE OR DELETE ON ${this.#source.toSqlIdentifier()}
+      AFTER INSERT OR UPDATE OR DELETE ON ${this.#source.sqlIdentifier}
       FOR EACH ROW EXECUTE FUNCTION ${this.#functionName}()
     `;
   }

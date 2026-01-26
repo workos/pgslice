@@ -35,6 +35,6 @@ export class AnalyzeCommand extends BaseCommand {
       swapped: this.swapped,
     });
 
-    this.context.stdout.write(`ANALYZE VERBOSE ${table.toQuotedString()};\n`);
+    this.context.stdout.write(`ANALYZE VERBOSE ${table.quoted};\n`);
   }
 }

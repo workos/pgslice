@@ -83,7 +83,7 @@ export class Synchronizer {
   ): Promise<Synchronizer> {
     const table = Table.parse(options.table);
     const sourceTable = table;
-    const targetTable = table.intermediate();
+    const targetTable = table.intermediate;
 
     if (!(await sourceTable.exists(tx))) {
       throw new Error(`Table not found: ${sourceTable.toString()}`);
@@ -291,7 +291,7 @@ export class Synchronizer {
     const result = await connection.any(
       sql.type(rowSchema)`
         SELECT ${columnList}
-        FROM ${table.toSqlIdentifier()}
+        FROM ${table.sqlIdentifier}
         WHERE ${pkCol} ${operator} ${startingId}
         ORDER BY ${pkCol}
         LIMIT ${this.#windowSize}
@@ -316,7 +316,7 @@ export class Synchronizer {
     const result = await connection.any(
       sql.type(rowSchema)`
         SELECT ${columnList}
-        FROM ${table.toSqlIdentifier()}
+        FROM ${table.sqlIdentifier}
         WHERE ${pkCol} >= ${firstPk} AND ${pkCol} <= ${lastPk}
         ORDER BY ${pkCol}
       `,
@@ -369,7 +369,7 @@ export class Synchronizer {
 
     await connection.query(
       sql.type(z.object({}))`
-        INSERT INTO ${this.#target.toSqlIdentifier()} (${columnList})
+        INSERT INTO ${this.#target.sqlIdentifier} (${columnList})
         VALUES (${valueList})
       `,
     );
@@ -397,7 +397,7 @@ export class Synchronizer {
 
     await connection.query(
       sql.type(z.object({}))`
-        UPDATE ${this.#target.toSqlIdentifier()}
+        UPDATE ${this.#target.sqlIdentifier}
         SET ${setClause}
         WHERE ${pkCol} = ${pkValue as Parameters<typeof sql.fragment>[1]}
       `,
@@ -409,7 +409,7 @@ export class Synchronizer {
 
     await connection.query(
       sql.type(z.object({}))`
-        DELETE FROM ${this.#target.toSqlIdentifier()}
+        DELETE FROM ${this.#target.sqlIdentifier}
         WHERE ${pkCol} = ${pk}
       `,
     );

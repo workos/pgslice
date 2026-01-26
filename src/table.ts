@@ -98,21 +98,21 @@ export class Table {
   /**
    * Creates the intermediate table derived from this table.
    */
-  intermediate(): Table {
+  get intermediate(): Table {
     return new Table(this.schema, `${this.name}_intermediate`);
   }
 
   /**
    * Creates the retired table derived from this table.
    */
-  retired(): Table {
+  get retired(): Table {
     return new Table(this.schema, `${this.name}_retired`);
   }
 
   /**
    * Creates a SQL identifier token for this table.
    */
-  toSqlIdentifier(): IdentifierSqlToken {
+  get sqlIdentifier(): IdentifierSqlToken {
     return sql.identifier([this.schema, this.name]);
   }
 
@@ -120,7 +120,7 @@ export class Table {
    * Returns a quoted literal value for use with ::regclass casting.
    * The schema and table names are double-quoted to preserve case sensitivity.
    */
-  toRegclassLiteral() {
+  get regclassLiteral() {
     return sql.literalValue(`"${this.schema}"."${this.name}"`);
   }
 
@@ -135,7 +135,7 @@ export class Table {
    * Returns a properly quoted string representation of this table.
    * Both schema and name are double-quoted to preserve case.
    */
-  toQuotedString(): string {
+  get quoted(): string {
     return `"${this.schema}"."${this.name}"`;
   }
 
@@ -178,7 +178,7 @@ export class Table {
     const result = await tx.any(
       sql.type(z.object({ pg_get_indexdef: z.string() }))`
         SELECT pg_get_indexdef(indexrelid) FROM pg_index
-        WHERE indrelid = ${this.toRegclassLiteral()}::regclass AND indisprimary = 'f'
+        WHERE indrelid = ${this.regclassLiteral}::regclass AND indisprimary = 'f'
       `,
     );
     return result.map((row) => row.pg_get_indexdef);
@@ -191,7 +191,7 @@ export class Table {
     const result = await tx.any(
       sql.type(z.object({ pg_get_constraintdef: z.string() }))`
         SELECT pg_get_constraintdef(oid) FROM pg_constraint
-        WHERE conrelid = ${this.toRegclassLiteral()}::regclass AND contype = 'f'
+        WHERE conrelid = ${this.regclassLiteral}::regclass AND contype = 'f'
       `,
     );
     return result.map((row) => row.pg_get_constraintdef);
@@ -273,7 +273,7 @@ export class Table {
   ): Promise<TableSettings | null> {
     const result = await connection.maybeOne(
       sql.type(z.object({ comment: z.string().nullable() }))`
-        SELECT obj_description(${this.toRegclassLiteral()}::regclass) AS comment
+        SELECT obj_description(${this.regclassLiteral}::regclass) AS comment
       `,
     );
 
@@ -307,7 +307,7 @@ export class Table {
     const result = await tx.maybeOne(
       sql.type(z.object({ max_id: idValueSchema }))`
         SELECT MAX(${col}) AS max_id
-        FROM ${this.toSqlIdentifier()}
+        FROM ${this.sqlIdentifier}
         WHERE ${whereClause}
       `,
     );
@@ -343,7 +343,7 @@ export class Table {
     const result = await tx.maybeOne(
       sql.type(z.object({ min_id: idValueSchema }))`
         SELECT MIN(${col}) AS min_id
-        FROM ${this.toSqlIdentifier()}
+        FROM ${this.sqlIdentifier}
         WHERE ${whereClause}
       `,
     );

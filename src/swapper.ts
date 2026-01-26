@@ -55,11 +55,11 @@ export class Swapper {
   }
 
   get #intermediate(): Table {
-    return this.#table.intermediate();
+    return this.#table.intermediate;
   }
 
   get #retired(): Table {
-    return this.#table.retired();
+    return this.#table.retired;
   }
 
   /**
@@ -124,13 +124,13 @@ export class Swapper {
   async #renameTables(tx: DatabaseTransactionConnection): Promise<void> {
     await tx.query(
       sql.type(z.object({}))`
-        ALTER TABLE ${this.#table.toSqlIdentifier()} RENAME TO ${sql.identifier([this.#targetTable.name])}
+        ALTER TABLE ${this.#table.sqlIdentifier} RENAME TO ${sql.identifier([this.#targetTable.name])}
       `,
     );
 
     await tx.query(
       sql.type(z.object({}))`
-        ALTER TABLE ${this.#sourceTable.toSqlIdentifier()} RENAME TO ${sql.identifier([this.#table.name])}
+        ALTER TABLE ${this.#sourceTable.sqlIdentifier} RENAME TO ${sql.identifier([this.#table.name])}
       `,
     );
   }

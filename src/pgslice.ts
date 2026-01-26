@@ -95,7 +95,7 @@ export class Pgslice {
     options: PrepOptions,
   ): Promise<void> {
     const table = Table.parse(options.table);
-    const intermediate = table.intermediate();
+    const intermediate = table.intermediate;
 
     if (!(await table.exists(tx))) {
       throw new Error(`Table not found: ${table.toString()}`);
@@ -138,8 +138,8 @@ export class Pgslice {
     const serverVersionNum = await getServerVersionNum(tx);
 
     // Create partitioned table using the appropriate INCLUDING clauses
-    const intermediateIdent = intermediate.toSqlIdentifier();
-    const tableIdent = table.toSqlIdentifier();
+    const intermediateIdent = intermediate.sqlIdentifier;
+    const tableIdent = table.sqlIdentifier;
     const columnIdent = sql.identifier([columnInfo.name]);
 
     const includings = [
@@ -168,10 +168,7 @@ export class Pgslice {
     for (const indexDef of await table.indexDefs(tx)) {
       // Transform the index definition to point to the intermediate table
       const transformedIndexDef = indexDef
-        .replace(
-          / ON \S+ USING /,
-          ` ON ${intermediate.toQuotedString()} USING `,
-        )
+        .replace(/ ON \S+ USING /, ` ON ${intermediate.quoted} USING `)
         .replace(/ INDEX .+ ON /, " INDEX ON ");
       await tx.query(sql.type(z.object({}))`${rawSql(transformedIndexDef)}`);
     }
@@ -197,7 +194,7 @@ export class Pgslice {
     // Create table with all properties
     await tx.query(
       sql.type(z.object({}))`
-        CREATE TABLE ${intermediate.toSqlIdentifier()} (LIKE ${table.toSqlIdentifier()} INCLUDING ALL)
+        CREATE TABLE ${intermediate.sqlIdentifier} (LIKE ${table.sqlIdentifier} INCLUDING ALL)
       `,
     );
 
@@ -214,7 +211,7 @@ export class Pgslice {
       await tx.query(
         sql.type(
           z.object({}),
-        )`ALTER TABLE ${target.toSqlIdentifier()} ADD ${rawSql(fkDef)}`,
+        )`ALTER TABLE ${target.sqlIdentifier} ADD ${rawSql(fkDef)}`,
       );
     }
   }
@@ -228,7 +225,7 @@ export class Pgslice {
   ): Promise<void> {
     const originalTable = Table.parse(options.table);
     const targetTable = options.intermediate
-      ? originalTable.intermediate()
+      ? originalTable.intermediate
       : originalTable;
 
     if (!(await targetTable.exists(tx))) {
@@ -281,8 +278,8 @@ export class Pgslice {
 
       // Build the CREATE TABLE statement
       let createSql = sql.fragment`
-        CREATE TABLE ${partitionTable.toSqlIdentifier()}
-        PARTITION OF ${targetTable.toSqlIdentifier()}
+        CREATE TABLE ${partitionTable.sqlIdentifier}
+        PARTITION OF ${targetTable.sqlIdentifier}
         FOR VALUES FROM (${startDate}) TO (${endDate})
       `;
 
@@ -300,7 +297,7 @@ export class Pgslice {
         );
         await tx.query(
           sql.type(z.object({}))`
-            ALTER TABLE ${partitionTable.toSqlIdentifier()}
+            ALTER TABLE ${partitionTable.sqlIdentifier}
             ADD PRIMARY KEY (${pkColumns})
           `,
         );
@@ -318,7 +315,7 @@ export class Pgslice {
     options: EnableMirroringOptions,
   ): Promise<void> {
     const table = Table.parse(options.table);
-    const intermediate = table.intermediate();
+    const intermediate = table.intermediate;
 
     if (!(await table.exists(tx))) {
       throw new Error(`Table not found: ${table.toString()}`);
@@ -436,14 +433,14 @@ export class Pgslice {
    */
   async analyze(options: AnalyzeOptions): Promise<Table> {
     const table = Table.parse(options.table);
-    const targetTable = options.swapped ? table : table.intermediate();
+    const targetTable = options.swapped ? table : table.intermediate;
 
     if (!(await targetTable.exists(this.connection))) {
       throw new Error(`Table not found: ${targetTable.toString()}`);
     }
 
     await this.connection.query(
-      sql.type(z.object({}))`ANALYZE VERBOSE ${targetTable.toSqlIdentifier()}`,
+      sql.type(z.object({}))`ANALYZE VERBOSE ${targetTable.sqlIdentifier}`,
     );
 
     return targetTable;

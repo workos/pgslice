@@ -87,8 +87,8 @@ export class Filler {
     const table = Table.parse(options.table);
 
     // Resolve source and dest tables based on swapped option
-    const sourceTable = options.swapped ? table.retired() : table;
-    const destTable = options.swapped ? table : table.intermediate();
+    const sourceTable = options.swapped ? table.retired : table;
+    const destTable = options.swapped ? table : table.intermediate;
 
     if (!(await sourceTable.exists(tx))) {
       throw new Error(`Table not found: ${sourceTable.toString()}`);
@@ -281,9 +281,9 @@ export class Filler {
         }),
       )`
         WITH batch AS (
-          INSERT INTO ${this.#dest.toSqlIdentifier()} (${columnList})
+          INSERT INTO ${this.#dest.sqlIdentifier} (${columnList})
           SELECT ${columnList}
-          FROM ${this.#source.toSqlIdentifier()}
+          FROM ${this.#source.sqlIdentifier}
           WHERE ${whereClause}
           ORDER BY ${pkCol}
           LIMIT ${this.#batchSize}
