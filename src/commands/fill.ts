@@ -3,6 +3,7 @@ import * as t from "typanion";
 
 import { Pgslice } from "../pgslice.js";
 import { BaseCommand } from "./base.js";
+import { sleep } from "../command-utils.js";
 
 /**
  * Fill command for copying data from a source table to a destination table in batches.
@@ -68,16 +69,12 @@ export class FillCommand extends BaseCommand {
 
       // Sleep between batches if requested
       if (this.sleep) {
-        await this.#sleep();
+        await sleep(this.sleep * 1000);
       }
     }
 
     if (!hasBatches) {
       this.context.stdout.write("/* nothing to fill */\n");
     }
-  }
-
-  #sleep(): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, this.sleep));
   }
 }

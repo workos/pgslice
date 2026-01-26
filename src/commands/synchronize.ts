@@ -4,6 +4,7 @@ import * as t from "typanion";
 import { Pgslice } from "../pgslice.js";
 import { BaseCommand } from "./base.js";
 import type { SynchronizeBatchResult } from "../types.js";
+import { sleep } from "../command-utils.js";
 
 /**
  * Synchronize command for detecting and fixing data discrepancies between tables.
@@ -25,10 +26,16 @@ export class SynchronizeCommand extends BaseCommand {
     `,
     examples: [
       ["Synchronize posts to intermediate", "$0 synchronize posts"],
-      ["Synchronize with custom window size", "$0 synchronize posts --window-size 500"],
+      [
+        "Synchronize with custom window size",
+        "$0 synchronize posts --window-size 500",
+      ],
       ["Dry run to see changes", "$0 synchronize posts --dry-run"],
       ["Start from a specific ID", "$0 synchronize posts --start 12345"],
-      ["With delay between batches", "$0 synchronize posts --delay 1 --delay-multiplier 0.5"],
+      [
+        "With delay between batches",
+        "$0 synchronize posts --delay 1 --delay-multiplier 0.5",
+      ],
     ],
   });
 
@@ -100,7 +107,7 @@ export class SynchronizeCommand extends BaseCommand {
       // Calculate and apply adaptive delay
       const sleepTime = this.#calculateSleepTime(batch.batchDurationMs);
       if (sleepTime > 0) {
-        await this.#sleep(sleepTime);
+        await sleep(sleepTime * 1000);
       }
     }
 
@@ -109,7 +116,9 @@ export class SynchronizeCommand extends BaseCommand {
   }
 
   #printHeader(sourceName: string, targetName: string): void {
-    const mode = this.dryRun ? "DRY RUN (logging only)" : "WRITE (executing changes)";
+    const mode = this.dryRun
+      ? "DRY RUN (logging only)"
+      : "WRITE (executing changes)";
 
     this.context.stderr.write(`Synchronizing ${sourceName} to ${targetName}\n`);
     this.context.stderr.write(`Mode: ${mode}\n`);
@@ -121,7 +130,8 @@ export class SynchronizeCommand extends BaseCommand {
     const { start, end } = batch.primaryKeyRange;
     const pkRange = start === end ? String(start) : `${start}...${end}`;
 
-    const differencesCount = batch.rowsInserted + batch.rowsUpdated + batch.rowsDeleted;
+    const differencesCount =
+      batch.rowsInserted + batch.rowsUpdated + batch.rowsDeleted;
 
     if (differencesCount > 0) {
       this.context.stderr.write(
@@ -146,9 +156,13 @@ export class SynchronizeCommand extends BaseCommand {
     this.context.stderr.write("Synchronization complete\n");
     this.context.stderr.write("=".repeat(50) + "\n");
     this.context.stderr.write(`Total batches: ${stats.totalBatches}\n`);
-    this.context.stderr.write(`Total rows compared: ${stats.totalRowsCompared}\n`);
+    this.context.stderr.write(
+      `Total rows compared: ${stats.totalRowsCompared}\n`,
+    );
     this.context.stderr.write(`Matching rows: ${stats.matchingRows}\n`);
-    this.context.stderr.write(`Rows with differences: ${stats.rowsWithDifferences}\n`);
+    this.context.stderr.write(
+      `Rows with differences: ${stats.rowsWithDifferences}\n`,
+    );
     this.context.stderr.write(`Missing rows: ${stats.missingRows}\n`);
     this.context.stderr.write(`Extra rows: ${stats.extraRows}\n`);
   }
@@ -156,9 +170,5 @@ export class SynchronizeCommand extends BaseCommand {
   #calculateSleepTime(batchDurationMs: number): number {
     // sleep = delay + (batchDurationMs/1000 * delayMultiplier)
     return this.delay + (batchDurationMs / 1000) * this.delayMultiplier;
-  }
-
-  #sleep(seconds: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, seconds * 1000));
   }
 }
