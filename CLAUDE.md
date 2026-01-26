@@ -48,6 +48,7 @@ Some general guidelines for the TypeScript version:
   assertions, etc.
 - Only add code-comments when the code itself is not unclear or not
   self-describing.
+- Code is formatted using Prettier and `npm run format`.
 - We don't need to support older versions of Postgres; assume only version 13.x
   or later.
 - We don't need to support "trigger-based partitioning". Only native
