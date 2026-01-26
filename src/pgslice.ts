@@ -326,11 +326,10 @@ export class Pgslice {
       throw new Error(`Table not found: ${intermediate.toString()}`);
     }
 
-    await new Mirroring({
-      source: table,
-      target: intermediate,
-      mode: "intermediate",
-    }).enable(tx);
+    await new Mirroring({ source: table, mode: "intermediate" }).enable(
+      tx,
+      intermediate,
+    );
   }
 
   /**
@@ -342,17 +341,12 @@ export class Pgslice {
     options: DisableMirroringOptions,
   ): Promise<void> {
     const table = Table.parse(options.table);
-    const intermediate = table.intermediate();
 
     if (!(await table.exists(tx))) {
       throw new Error(`Table not found: ${table.toString()}`);
     }
 
-    await new Mirroring({
-      source: table,
-      target: intermediate,
-      mode: "intermediate",
-    }).disable(tx);
+    await new Mirroring({ source: table, mode: "intermediate" }).disable(tx);
   }
 
   /**

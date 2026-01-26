@@ -7,7 +7,6 @@ export type MirroringMode = "intermediate" | "retired";
 
 interface MirroringOptions {
   source: Table;
-  target: Table;
   mode: MirroringMode;
 }
 
@@ -18,23 +17,28 @@ interface MirroringOptions {
  */
 export class Mirroring {
   readonly #source: Table;
-  readonly #target: Table;
   readonly #mode: MirroringMode;
 
   constructor(options: MirroringOptions) {
     this.#source = options.source;
-    this.#target = options.target;
     this.#mode = options.mode;
   }
 
   /**
    * Enables mirroring by creating a trigger function and trigger on the source table.
    */
-  async enable(tx: DatabaseTransactionConnection): Promise<void> {
+  async enable(
+    tx: DatabaseTransactionConnection,
+    target: Table,
+  ): Promise<void> {
     const columns = (await this.#source.columns(tx)).map((c) => c.name);
     const primaryKeyColumns = await this.#source.primaryKey(tx);
 
-    const functionSql = this.#buildFunctionSql(columns, primaryKeyColumns);
+    const functionSql = this.#buildFunctionSql(
+      columns,
+      primaryKeyColumns,
+      target,
+    );
 
     await tx.query(sql.type(z.object({}))`${functionSql}`);
     await tx.query(sql.type(z.object({}))`${this.#dropTriggerSql}`);
@@ -113,14 +117,18 @@ export class Mirroring {
     return sql.fragment` ON CONFLICT DO NOTHING`;
   }
 
-  #buildFunctionSql(columns: string[], primaryKeyColumns: string[]) {
+  #buildFunctionSql(
+    columns: string[],
+    primaryKeyColumns: string[],
+    target: Table,
+  ) {
     const whereColumns =
       primaryKeyColumns.length > 0 ? primaryKeyColumns : columns;
     const whereClause = this.#buildWhereClause(whereColumns);
     const setClause = this.#buildSetClause(columns);
     const columnList = this.#buildColumnList(columns);
     const newTupleList = this.#buildNewTupleList(columns);
-    const targetTable = this.#target.toSqlIdentifier();
+    const targetTable = target.toSqlIdentifier();
     const conflictClause = this.#buildConflictClause(
       columns,
       primaryKeyColumns,

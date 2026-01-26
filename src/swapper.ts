@@ -115,14 +115,8 @@ export class Swapper {
    */
   async #disableMirroring(tx: DatabaseTransactionConnection): Promise<void> {
     const mode = this.#direction === "forward" ? "intermediate" : "retired";
-    const target =
-      this.#direction === "forward" ? this.#intermediate : this.#retired;
 
-    await new Mirroring({
-      source: this.#table,
-      target,
-      mode,
-    }).disable(tx);
+    await new Mirroring({ source: this.#table, mode }).disable(tx);
   }
 
   /**
@@ -178,10 +172,6 @@ export class Swapper {
       this.#direction === "forward" ? this.#retired : this.#intermediate;
 
     // After swap, table now refers to the new main table
-    await new Mirroring({
-      source: this.#table,
-      target,
-      mode,
-    }).enable(tx);
+    await new Mirroring({ source: this.#table, mode }).enable(tx, target);
   }
 }
