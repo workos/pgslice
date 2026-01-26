@@ -20,6 +20,7 @@ import type {
   SwapOptions,
   SynchronizeBatchResult,
   SynchronizeOptions,
+  UnprepOptions,
   UnswapOptions,
 } from "./types.js";
 import { isPeriod } from "./types.js";
@@ -444,5 +445,29 @@ export class Pgslice {
     );
 
     return targetTable;
+  }
+
+  /**
+   * Removes the intermediate table created by prep.
+   *
+   * This reverses the prep command by dropping the intermediate table
+   * with CASCADE, which also removes any dependent objects like partitions.
+   */
+  async unprep(
+    tx: DatabaseTransactionConnection,
+    options: UnprepOptions,
+  ): Promise<void> {
+    const table = Table.parse(options.table);
+    const intermediate = table.intermediate;
+
+    if (!(await intermediate.exists(tx))) {
+      throw new Error(`Table not found: ${intermediate.toString()}`);
+    }
+
+    await tx.query(
+      sql.type(z.object({}))`
+        DROP TABLE ${intermediate.sqlIdentifier} CASCADE
+      `,
+    );
   }
 }

@@ -6,6 +6,7 @@ export type {
   Period,
   Cast,
   PrepOptions,
+  UnprepOptions,
   FillOptions,
   FillBatchResult,
   IdValue,

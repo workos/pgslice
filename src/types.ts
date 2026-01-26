@@ -178,3 +178,10 @@ export interface AnalyzeOptions {
   table: string;
   swapped?: boolean;
 }
+
+/**
+ * Options for the `unprep` command.
+ */
+export interface UnprepOptions {
+  table: string;
+}
