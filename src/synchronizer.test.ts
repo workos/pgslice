@@ -10,8 +10,8 @@ describe("Synchronizer", () => {
     test("throws when source table does not exist", async ({ transaction }) => {
       // Only create the intermediate table
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
 
       const error = await Synchronizer.init(transaction, {
         table: "posts",
@@ -23,8 +23,8 @@ describe("Synchronizer", () => {
     test("throws when target table does not exist", async ({ transaction }) => {
       // Only create the source table
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
 
       const error = await Synchronizer.init(transaction, {
         table: "posts",
@@ -37,11 +37,11 @@ describe("Synchronizer", () => {
       transaction,
     }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, extra_col TEXT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, extra_col TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
 
       const error = await Synchronizer.init(transaction, {
         table: "posts",
@@ -56,11 +56,11 @@ describe("Synchronizer", () => {
       transaction,
     }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, extra_col TEXT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, extra_col TEXT)
+      `);
 
       const error = await Synchronizer.init(transaction, {
         table: "posts",
@@ -73,11 +73,11 @@ describe("Synchronizer", () => {
 
     test("throws when source table is empty", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
 
       const error = await Synchronizer.init(transaction, {
         table: "posts",
@@ -91,14 +91,14 @@ describe("Synchronizer", () => {
     }) => {
       // Create tables without primary key
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL, name TEXT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL, name TEXT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (name) VALUES ('test')
-    `);
+        INSERT INTO posts (name) VALUES ('test')
+      `);
 
       const error = await Synchronizer.init(transaction, {
         table: "posts",
@@ -113,14 +113,14 @@ describe("Synchronizer", () => {
       transaction,
     }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (name) VALUES ('test')
-    `);
+        INSERT INTO posts (name) VALUES ('test')
+      `);
 
       const error = await Synchronizer.init(transaction, {
         table: "posts",
@@ -136,14 +136,14 @@ describe("Synchronizer", () => {
   describe("synchronize", () => {
     test("detects and inserts missing rows", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (name) VALUES ('a'), ('b'), ('c')
-    `);
+        INSERT INTO posts (name) VALUES ('a'), ('b'), ('c')
+      `);
       // Target is empty - all rows are missing
 
       const synchronizer = await Synchronizer.init(transaction, {
@@ -175,18 +175,18 @@ describe("Synchronizer", () => {
 
     test("detects and updates different rows", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (name) VALUES ('updated_a'), ('updated_b')
-    `);
+        INSERT INTO posts (name) VALUES ('updated_a'), ('updated_b')
+      `);
       // Target has same IDs but different names
       await transaction.query(sql.unsafe`
-      INSERT INTO posts_intermediate (id, name) VALUES (1, 'old_a'), (2, 'old_b')
-    `);
+        INSERT INTO posts_intermediate (id, name) VALUES (1, 'old_a'), (2, 'old_b')
+      `);
 
       const synchronizer = await Synchronizer.init(transaction, {
         table: "posts",
@@ -219,19 +219,19 @@ describe("Synchronizer", () => {
 
     test("detects and deletes extra rows", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGINT PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts (id BIGINT PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGINT PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGINT PRIMARY KEY, name TEXT)
+      `);
       // Source has ids 1 and 3 (gap at 2)
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (id, name) VALUES (1, 'a'), (3, 'c')
-    `);
+        INSERT INTO posts (id, name) VALUES (1, 'a'), (3, 'c')
+      `);
       // Target has ids 1, 2, 3 - id=2 is extra (within the range 1-3)
       await transaction.query(sql.unsafe`
-      INSERT INTO posts_intermediate (id, name) VALUES (1, 'a'), (2, 'extra'), (3, 'c')
-    `);
+        INSERT INTO posts_intermediate (id, name) VALUES (1, 'a'), (2, 'extra'), (3, 'c')
+      `);
 
       const synchronizer = await Synchronizer.init(transaction, {
         table: "posts",
@@ -260,15 +260,15 @@ describe("Synchronizer", () => {
 
     test("processes in batches", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (name)
-      SELECT 'item_' || i FROM generate_series(1, 25) AS i
-    `);
+        INSERT INTO posts (name)
+        SELECT 'item_' || i FROM generate_series(1, 25) AS i
+      `);
 
       const synchronizer = await Synchronizer.init(transaction, {
         table: "posts",
@@ -290,14 +290,14 @@ describe("Synchronizer", () => {
 
     test("respects start option", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (name) VALUES ('a'), ('b'), ('c'), ('d'), ('e')
-    `);
+        INSERT INTO posts (name) VALUES ('a'), ('b'), ('c'), ('d'), ('e')
+      `);
 
       // Start from id=3
       const synchronizer = await Synchronizer.init(transaction, {
@@ -316,18 +316,18 @@ describe("Synchronizer", () => {
 
     test("reports matching rows", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (name) VALUES ('a'), ('b'), ('c')
-    `);
+        INSERT INTO posts (name) VALUES ('a'), ('b'), ('c')
+      `);
       // Copy same data to target
       await transaction.query(sql.unsafe`
-      INSERT INTO posts_intermediate (id, name) VALUES (1, 'a'), (2, 'b'), (3, 'c')
-    `);
+        INSERT INTO posts_intermediate (id, name) VALUES (1, 'a'), (2, 'b'), (3, 'c')
+      `);
 
       const synchronizer = await Synchronizer.init(transaction, {
         table: "posts",
@@ -350,14 +350,14 @@ describe("Synchronizer", () => {
 
     test("dry-run mode skips mutations", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (name) VALUES ('a'), ('b'), ('c')
-    `);
+        INSERT INTO posts (name) VALUES ('a'), ('b'), ('c')
+      `);
       // Target is empty
 
       const synchronizer = await Synchronizer.init(transaction, {
@@ -386,19 +386,19 @@ describe("Synchronizer", () => {
       transaction,
     }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       // Source: id=1 (matching), id=2 (needs update), id=3 (missing)
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (id, name) VALUES (1, 'same'), (2, 'updated'), (3, 'new')
-    `);
+        INSERT INTO posts (id, name) VALUES (1, 'same'), (2, 'updated'), (3, 'new')
+      `);
       // Target: id=1 (matching), id=2 (different), id=4 (extra)
       await transaction.query(sql.unsafe`
-      INSERT INTO posts_intermediate (id, name) VALUES (1, 'same'), (2, 'old'), (4, 'extra')
-    `);
+        INSERT INTO posts_intermediate (id, name) VALUES (1, 'same'), (2, 'old'), (4, 'extra')
+      `);
 
       const synchronizer = await Synchronizer.init(transaction, {
         table: "posts",
@@ -431,17 +431,17 @@ describe("Synchronizer", () => {
 
     test("handles ULID primary keys", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id TEXT PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts (id TEXT PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id TEXT PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts_intermediate (id TEXT PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (id, name) VALUES
-        ('01ARZ3NDEKTSV4RRFFQ69G5FAA', 'a'),
-        ('01ARZ3NDEKTSV4RRFFQ69G5FAB', 'b'),
-        ('01ARZ3NDEKTSV4RRFFQ69G5FAC', 'c')
-    `);
+        INSERT INTO posts (id, name) VALUES
+          ('01ARZ3NDEKTSV4RRFFQ69G5FAA', 'a'),
+          ('01ARZ3NDEKTSV4RRFFQ69G5FAB', 'b'),
+          ('01ARZ3NDEKTSV4RRFFQ69G5FAC', 'c')
+      `);
 
       const synchronizer = await Synchronizer.init(transaction, {
         table: "posts",
@@ -465,14 +465,14 @@ describe("Synchronizer", () => {
 
     test("reports batch duration", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (name) VALUES ('a')
-    `);
+        INSERT INTO posts (name) VALUES ('a')
+      `);
 
       const synchronizer = await Synchronizer.init(transaction, {
         table: "posts",
@@ -489,14 +489,14 @@ describe("Synchronizer", () => {
 
     test("reports primary key range", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (name) VALUES ('a'), ('b'), ('c')
-    `);
+        INSERT INTO posts (name) VALUES ('a'), ('b'), ('c')
+      `);
 
       const synchronizer = await Synchronizer.init(transaction, {
         table: "posts",
@@ -516,15 +516,15 @@ describe("Synchronizer", () => {
 
     test("handles NULL values in columns", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, description TEXT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, description TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, description TEXT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, description TEXT)
+      `);
       // Source has NULL values
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (name, description) VALUES ('a', NULL), ('b', 'has description'), (NULL, 'c')
-    `);
+        INSERT INTO posts (name, description) VALUES ('a', NULL), ('b', 'has description'), (NULL, 'c')
+      `);
 
       const synchronizer = await Synchronizer.init(transaction, {
         table: "posts",
@@ -558,17 +558,17 @@ describe("Synchronizer", () => {
 
     test("handles timestamp columns", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, created_at TIMESTAMPTZ)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, created_at TIMESTAMPTZ)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, created_at TIMESTAMPTZ)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, created_at TIMESTAMPTZ)
+      `);
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (name, created_at) VALUES
-        ('a', '2024-01-15 10:30:00+00'),
-        ('b', '2024-06-20 14:45:30+00'),
-        ('c', NULL)
-    `);
+        INSERT INTO posts (name, created_at) VALUES
+          ('a', '2024-01-15 10:30:00+00'),
+          ('b', '2024-06-20 14:45:30+00'),
+          ('c', NULL)
+      `);
 
       const synchronizer = await Synchronizer.init(transaction, {
         table: "posts",
@@ -613,23 +613,23 @@ describe("Synchronizer", () => {
       transaction,
     }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, created_at TIMESTAMPTZ)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, created_at TIMESTAMPTZ)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, created_at TIMESTAMPTZ)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, created_at TIMESTAMPTZ)
+      `);
       // Source has updated timestamps
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (name, created_at) VALUES
-        ('a', '2024-01-15 10:30:00+00'),
-        ('b', '2024-06-20 14:45:30+00')
-    `);
+        INSERT INTO posts (name, created_at) VALUES
+          ('a', '2024-01-15 10:30:00+00'),
+          ('b', '2024-06-20 14:45:30+00')
+      `);
       // Target has old timestamps
       await transaction.query(sql.unsafe`
-      INSERT INTO posts_intermediate (id, name, created_at) VALUES
-        (1, 'a', '2024-01-15 10:30:00+00'),
-        (2, 'b', '2023-01-01 00:00:00+00')
-    `);
+        INSERT INTO posts_intermediate (id, name, created_at) VALUES
+          (1, 'a', '2024-01-15 10:30:00+00'),
+          (2, 'b', '2023-01-01 00:00:00+00')
+      `);
 
       const synchronizer = await Synchronizer.init(transaction, {
         table: "posts",
@@ -650,18 +650,18 @@ describe("Synchronizer", () => {
 
     test("handles bigint columns", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, view_count BIGINT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, view_count BIGINT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, view_count BIGINT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, view_count BIGINT)
+      `);
       // Use large numbers that exceed JavaScript's safe integer range
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (name, view_count) VALUES
-        ('a', 9007199254740993),
-        ('b', 9007199254740994),
-        ('c', NULL)
-    `);
+        INSERT INTO posts (name, view_count) VALUES
+          ('a', 9007199254740993),
+          ('b', 9007199254740994),
+          ('c', NULL)
+      `);
 
       const synchronizer = await Synchronizer.init(transaction, {
         table: "posts",
@@ -694,21 +694,21 @@ describe("Synchronizer", () => {
 
     test("detects differences in bigint columns", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, view_count BIGINT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, view_count BIGINT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, view_count BIGINT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, view_count BIGINT)
+      `);
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (name, view_count) VALUES
-        ('a', 9007199254740993),
-        ('b', 100)
-    `);
+        INSERT INTO posts (name, view_count) VALUES
+          ('a', 9007199254740993),
+          ('b', 100)
+      `);
       await transaction.query(sql.unsafe`
-      INSERT INTO posts_intermediate (id, name, view_count) VALUES
-        (1, 'a', 9007199254740993),
-        (2, 'b', 200)
-    `);
+        INSERT INTO posts_intermediate (id, name, view_count) VALUES
+          (1, 'a', 9007199254740993),
+          (2, 'b', 200)
+      `);
 
       const synchronizer = await Synchronizer.init(transaction, {
         table: "posts",
@@ -729,20 +729,20 @@ describe("Synchronizer", () => {
 
     test("handles updates with NULL values", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, description TEXT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, description TEXT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, description TEXT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT, description TEXT)
+      `);
       // Source has NULL where target has value, and value where target has NULL
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (name, description) VALUES ('a', NULL), ('b', 'now has description')
-    `);
+        INSERT INTO posts (name, description) VALUES ('a', NULL), ('b', 'now has description')
+      `);
       await transaction.query(sql.unsafe`
-      INSERT INTO posts_intermediate (id, name, description) VALUES
-        (1, 'a', 'had description'),
-        (2, 'b', NULL)
-    `);
+        INSERT INTO posts_intermediate (id, name, description) VALUES
+          (1, 'a', 'had description'),
+          (2, 'b', NULL)
+      `);
 
       const synchronizer = await Synchronizer.init(transaction, {
         table: "posts",
@@ -774,30 +774,30 @@ describe("Synchronizer", () => {
 
     test("handles mixed column types", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (
-        id BIGSERIAL PRIMARY KEY,
-        name TEXT,
-        view_count BIGINT,
-        rating NUMERIC(3,2),
-        is_published BOOLEAN,
-        created_at TIMESTAMPTZ
-      )
-    `);
+        CREATE TABLE posts (
+          id BIGSERIAL PRIMARY KEY,
+          name TEXT,
+          view_count BIGINT,
+          rating NUMERIC(3,2),
+          is_published BOOLEAN,
+          created_at TIMESTAMPTZ
+        )
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (
-        id BIGSERIAL PRIMARY KEY,
-        name TEXT,
-        view_count BIGINT,
-        rating NUMERIC(3,2),
-        is_published BOOLEAN,
-        created_at TIMESTAMPTZ
-      )
-    `);
+        CREATE TABLE posts_intermediate (
+          id BIGSERIAL PRIMARY KEY,
+          name TEXT,
+          view_count BIGINT,
+          rating NUMERIC(3,2),
+          is_published BOOLEAN,
+          created_at TIMESTAMPTZ
+        )
+      `);
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (name, view_count, rating, is_published, created_at) VALUES
-        ('post1', 1000, 4.5, true, '2024-01-15 10:30:00+00'),
-        ('post2', NULL, NULL, false, NULL)
-    `);
+        INSERT INTO posts (name, view_count, rating, is_published, created_at) VALUES
+          ('post1', 1000, 4.5, true, '2024-01-15 10:30:00+00'),
+          ('post2', NULL, NULL, false, NULL)
+      `);
 
       const synchronizer = await Synchronizer.init(transaction, {
         table: "posts",
@@ -861,18 +861,18 @@ describe("Synchronizer", () => {
       // This tests that BIGINT values in the range that could be mistaken for timestamps
       // (500_000_000_000 to 10_000_000_000_000) are treated as plain integers, not timestamps
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, large_value BIGINT)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, large_value BIGINT)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, large_value BIGINT)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, large_value BIGINT)
+      `);
       // Use values in the "timestamp-like" range
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (large_value) VALUES
-        (600000000000),
-        (1000000000000),
-        (5000000000000)
-    `);
+        INSERT INTO posts (large_value) VALUES
+          (600000000000),
+          (1000000000000),
+          (5000000000000)
+      `);
 
       const synchronizer = await Synchronizer.init(transaction, {
         table: "posts",
@@ -903,17 +903,17 @@ describe("Synchronizer", () => {
     test("handles UUID columns", async ({ transaction }) => {
       // Use BIGSERIAL as PK since PostgreSQL doesn't support MIN/MAX on UUID
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, uuid_col UUID)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, uuid_col UUID)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, uuid_col UUID)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, uuid_col UUID)
+      `);
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (uuid_col) VALUES
-        ('550e8400-e29b-41d4-a716-446655440000'),
-        ('6ba7b810-9dad-11d1-80b4-00c04fd430c8'),
-        (NULL)
-    `);
+        INSERT INTO posts (uuid_col) VALUES
+          ('550e8400-e29b-41d4-a716-446655440000'),
+          ('6ba7b810-9dad-11d1-80b4-00c04fd430c8'),
+          (NULL)
+      `);
 
       const synchronizer = await Synchronizer.init(transaction, {
         table: "posts",
@@ -943,17 +943,17 @@ describe("Synchronizer", () => {
 
     test("handles DATE columns", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, event_date DATE)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, event_date DATE)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, event_date DATE)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, event_date DATE)
+      `);
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (event_date) VALUES
-        ('2024-01-15'),
-        ('2024-06-20'),
-        (NULL)
-    `);
+        INSERT INTO posts (event_date) VALUES
+          ('2024-01-15'),
+          ('2024-06-20'),
+          (NULL)
+      `);
 
       const synchronizer = await Synchronizer.init(transaction, {
         table: "posts",
@@ -986,17 +986,17 @@ describe("Synchronizer", () => {
 
     test("handles BYTEA columns", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, data BYTEA)
-    `);
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, data BYTEA)
+      `);
       await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, data BYTEA)
-    `);
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, data BYTEA)
+      `);
       await transaction.query(sql.unsafe`
-      INSERT INTO posts (data) VALUES
-        (E'\\x48656c6c6f'),
-        (E'\\x576f726c64'),
-        (NULL)
-    `);
+        INSERT INTO posts (data) VALUES
+          (E'\\x48656c6c6f'),
+          (E'\\x576f726c64'),
+          (NULL)
+      `);
 
       const synchronizer = await Synchronizer.init(transaction, {
         table: "posts",
