@@ -1,4 +1,4 @@
-import { sql } from "slonik";
+import { sql, type PrimitiveValueExpression } from "slonik";
 import type { Cast } from "./types.js";
 
 /**
@@ -25,4 +25,49 @@ export function formatDateForSql(date: Date, cast: Cast) {
     return sql.literalValue(`${year}-${month}-${day} 00:00:00 UTC`);
   }
   return sql.literalValue(`${year}-${month}-${day}`);
+}
+
+/**
+ * Converts a value to a SQL fragment using the appropriate slonik helper based on data type.
+ */
+export function valueToSql(val: unknown, dataType: string) {
+  if (val === null) {
+    return sql.fragment`NULL`;
+  }
+
+  // Timestamp types - slonik returns as ms since epoch
+  if (
+    dataType === "timestamp with time zone" ||
+    dataType === "timestamp without time zone"
+  ) {
+    if (typeof val === "number") {
+      return sql.timestamp(new Date(val));
+    }
+    if (val instanceof Date) {
+      return sql.timestamp(val);
+    }
+  }
+
+  // Date type - slonik returns as string "YYYY-MM-DD"
+  if (dataType === "date") {
+    if (typeof val === "string") {
+      return sql.date(new Date(val));
+    }
+    if (val instanceof Date) {
+      return sql.date(val);
+    }
+  }
+
+  // UUID type
+  if (dataType === "uuid" && typeof val === "string") {
+    return sql.uuid(val);
+  }
+
+  // Binary type
+  if (dataType === "bytea" && Buffer.isBuffer(val)) {
+    return sql.binary(val);
+  }
+
+  // All other types - pass directly to slonik
+  return sql.fragment`${val as PrimitiveValueExpression}`;
 }

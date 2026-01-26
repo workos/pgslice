@@ -1,6 +1,7 @@
-import { CommonQueryMethods, sql, type PrimitiveValueExpression } from "slonik";
+import { CommonQueryMethods, sql } from "slonik";
 import { z } from "zod";
 import { Table } from "./table.js";
+import { valueToSql } from "./sql-utils.js";
 import type { ColumnInfo, IdValue, SynchronizeBatchResult, SynchronizeOptions } from "./types.js";
 
 /**
@@ -19,52 +20,6 @@ function transformIdValue(val: bigint | number | string): IdValue {
     return BigInt(val);
   }
   return val;
-}
-
-/**
- * Converts a value to a SQL fragment using the appropriate slonik helper based on column data type.
- * Uses explicit type information instead of heuristics to properly handle timestamps, dates, etc.
- */
-function valueToSql(val: unknown, dataType: string) {
-  if (val === null) {
-    return sql.fragment`NULL`;
-  }
-
-  // Timestamp types - slonik returns as ms since epoch
-  if (
-    dataType === "timestamp with time zone" ||
-    dataType === "timestamp without time zone"
-  ) {
-    if (typeof val === "number") {
-      return sql.timestamp(new Date(val));
-    }
-    if (val instanceof Date) {
-      return sql.timestamp(val);
-    }
-  }
-
-  // Date type - slonik returns as string "YYYY-MM-DD"
-  if (dataType === "date") {
-    if (typeof val === "string") {
-      return sql.date(new Date(val));
-    }
-    if (val instanceof Date) {
-      return sql.date(val);
-    }
-  }
-
-  // UUID type
-  if (dataType === "uuid" && typeof val === "string") {
-    return sql.uuid(val);
-  }
-
-  // Binary type
-  if (dataType === "bytea" && Buffer.isBuffer(val)) {
-    return sql.binary(val);
-  }
-
-  // All other types - pass directly to slonik
-  return sql.fragment`${val as PrimitiveValueExpression}`;
 }
 
 /**
@@ -91,7 +46,6 @@ export class Synchronizer {
   readonly #target: Table;
   readonly #primaryKeyColumn: string;
   readonly #columns: ColumnInfo[];
-  readonly #columnDataTypes: Map<string, string>;
   readonly #windowSize: number;
   readonly #startingId: IdValue;
   readonly #dryRun: boolean;
@@ -101,9 +55,6 @@ export class Synchronizer {
     this.#target = options.target;
     this.#primaryKeyColumn = options.primaryKeyColumn;
     this.#columns = options.columns;
-    this.#columnDataTypes = new Map(
-      options.columns.map((col) => [col.name, col.dataType]),
-    );
     this.#windowSize = options.windowSize;
     this.#startingId = options.startingId;
     this.#dryRun = options.dryRun;
