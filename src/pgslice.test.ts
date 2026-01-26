@@ -735,8 +735,7 @@ describe("Pgslice.synchronize", () => {
       batches.push(batch);
     }
 
-    expect(batches).toHaveLength(1);
-    expect(batches[0].rowsUpdated).toBe(1);
+    expect(batches).toEqual([expect.objectContaining({ rowsUpdated: 1 })]);
 
     // Verify the difference was fixed
     const row = await transaction.one(

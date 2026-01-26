@@ -32,7 +32,9 @@ describe("Synchronizer.init", () => {
     expect(error.message).toBe("Table not found: public.posts_intermediate");
   });
 
-  test("throws when source has column not in target", async ({ transaction }) => {
+  test("throws when source has column not in target", async ({
+    transaction,
+  }) => {
     await transaction.query(sql.unsafe`
       CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT, extra_col TEXT)
     `);
@@ -49,7 +51,9 @@ describe("Synchronizer.init", () => {
     );
   });
 
-  test("throws when target has column not in source", async ({ transaction }) => {
+  test("throws when target has column not in source", async ({
+    transaction,
+  }) => {
     await transaction.query(sql.unsafe`
       CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
     `);
@@ -99,7 +103,9 @@ describe("Synchronizer.init", () => {
       table: "posts",
     }).catch((e) => e);
 
-    expect(error.message).toBe("Primary key not found. Specify with --primary-key");
+    expect(error.message).toBe(
+      "Primary key not found. Specify with --primary-key",
+    );
   });
 
   test("throws when specified primary key not found in source", async ({
@@ -120,7 +126,9 @@ describe("Synchronizer.init", () => {
       primaryKey: "nonexistent_column",
     }).catch((e) => e);
 
-    expect(error.message).toBe("Primary key 'nonexistent_column' not found in source table");
+    expect(error.message).toBe(
+      "Primary key 'nonexistent_column' not found in source table",
+    );
   });
 });
 
@@ -146,11 +154,14 @@ describe("Synchronizer.synchronize", () => {
       batches.push(batch);
     }
 
-    expect(batches).toHaveLength(1);
-    expect(batches[0].rowsInserted).toBe(3);
-    expect(batches[0].rowsUpdated).toBe(0);
-    expect(batches[0].rowsDeleted).toBe(0);
-    expect(batches[0].matchingRows).toBe(0);
+    expect(batches).toEqual([
+      expect.objectContaining({
+        rowsInserted: 3,
+        rowsUpdated: 0,
+        rowsDeleted: 0,
+        matchingRows: 0,
+      }),
+    ]);
 
     // Verify rows were inserted
     const count = await transaction.one(
@@ -185,10 +196,13 @@ describe("Synchronizer.synchronize", () => {
       batches.push(batch);
     }
 
-    expect(batches).toHaveLength(1);
-    expect(batches[0].rowsInserted).toBe(0);
-    expect(batches[0].rowsUpdated).toBe(2);
-    expect(batches[0].rowsDeleted).toBe(0);
+    expect(batches).toEqual([
+      expect.objectContaining({
+        rowsInserted: 0,
+        rowsUpdated: 2,
+        rowsDeleted: 0,
+      }),
+    ]);
 
     // Verify rows were updated
     const rows = await transaction.any(
@@ -227,9 +241,12 @@ describe("Synchronizer.synchronize", () => {
       batches.push(batch);
     }
 
-    expect(batches).toHaveLength(1);
-    expect(batches[0].rowsDeleted).toBe(1);
-    expect(batches[0].matchingRows).toBe(2);
+    expect(batches).toEqual([
+      expect.objectContaining({
+        rowsDeleted: 1,
+        matchingRows: 2,
+      }),
+    ]);
 
     // Verify extra row was deleted
     const count = await transaction.one(
@@ -263,10 +280,7 @@ describe("Synchronizer.synchronize", () => {
     }
 
     // 25 rows with windowSize=10 should produce 3 batches
-    expect(batches).toHaveLength(3);
-    expect(batches[0].batchNumber).toBe(1);
-    expect(batches[1].batchNumber).toBe(2);
-    expect(batches[2].batchNumber).toBe(3);
+    expect(batches.map((b) => b.batchNumber)).toEqual([1, 2, 3]);
 
     // Total rows inserted should be 25
     const totalInserted = batches.reduce((sum, b) => sum + b.rowsInserted, 0);
@@ -295,9 +309,8 @@ describe("Synchronizer.synchronize", () => {
       batches.push(batch);
     }
 
-    expect(batches).toHaveLength(1);
     // Should have synchronized 3 rows (ids 3, 4, 5)
-    expect(batches[0].rowsInserted).toBe(3);
+    expect(batches).toEqual([expect.objectContaining({ rowsInserted: 3 })]);
   });
 
   test("reports matching rows", async ({ transaction }) => {
@@ -324,11 +337,14 @@ describe("Synchronizer.synchronize", () => {
       batches.push(batch);
     }
 
-    expect(batches).toHaveLength(1);
-    expect(batches[0].matchingRows).toBe(3);
-    expect(batches[0].rowsInserted).toBe(0);
-    expect(batches[0].rowsUpdated).toBe(0);
-    expect(batches[0].rowsDeleted).toBe(0);
+    expect(batches).toEqual([
+      expect.objectContaining({
+        matchingRows: 3,
+        rowsInserted: 0,
+        rowsUpdated: 0,
+        rowsDeleted: 0,
+      }),
+    ]);
   });
 
   test("dry-run mode skips mutations", async ({ transaction }) => {
@@ -353,9 +369,8 @@ describe("Synchronizer.synchronize", () => {
       batches.push(batch);
     }
 
-    expect(batches).toHaveLength(1);
     // Batch should report would-be changes
-    expect(batches[0].rowsInserted).toBe(3);
+    expect(batches).toEqual([expect.objectContaining({ rowsInserted: 3 })]);
 
     // But no actual changes should have been made
     const count = await transaction.one(
@@ -391,13 +406,16 @@ describe("Synchronizer.synchronize", () => {
       batches.push(batch);
     }
 
-    expect(batches).toHaveLength(1);
-    expect(batches[0].matchingRows).toBe(1); // id=1
-    expect(batches[0].rowsUpdated).toBe(1); // id=2
-    expect(batches[0].rowsInserted).toBe(1); // id=3
     // Note: id=4 is NOT deleted because it's outside the batch range (1-3)
     // The synchronize only checks within the primary key range of the source batch
-    expect(batches[0].rowsDeleted).toBe(0);
+    expect(batches).toEqual([
+      expect.objectContaining({
+        matchingRows: 1, // id=1
+        rowsUpdated: 1, // id=2
+        rowsInserted: 1, // id=3
+        rowsDeleted: 0,
+      }),
+    ]);
 
     // Verify final state
     const rows = await transaction.any(
@@ -431,8 +449,7 @@ describe("Synchronizer.synchronize", () => {
       batches.push(batch);
     }
 
-    expect(batches).toHaveLength(1);
-    expect(batches[0].rowsInserted).toBe(3);
+    expect(batches).toEqual([expect.objectContaining({ rowsInserted: 3 })]);
 
     // Verify rows were inserted
     const count = await transaction.one(
@@ -487,9 +504,11 @@ describe("Synchronizer.synchronize", () => {
       batches.push(batch);
     }
 
-    expect(batches).toHaveLength(1);
-    expect(batches[0].primaryKeyRange.start).toBe(1n);
-    expect(batches[0].primaryKeyRange.end).toBe(3n);
+    expect(batches).toEqual([
+      expect.objectContaining({
+        primaryKeyRange: { start: 1n, end: 3n },
+      }),
+    ]);
   });
 
   test("handles NULL values in columns", async ({ transaction }) => {
@@ -513,8 +532,7 @@ describe("Synchronizer.synchronize", () => {
       batches.push(batch);
     }
 
-    expect(batches).toHaveLength(1);
-    expect(batches[0].rowsInserted).toBe(3);
+    expect(batches).toEqual([expect.objectContaining({ rowsInserted: 3 })]);
 
     // Verify NULL values were preserved
     const rows = await transaction.any(
@@ -558,8 +576,7 @@ describe("Synchronizer.synchronize", () => {
       batches.push(batch);
     }
 
-    expect(batches).toHaveLength(1);
-    expect(batches[0].rowsInserted).toBe(3);
+    expect(batches).toEqual([expect.objectContaining({ rowsInserted: 3 })]);
 
     // Verify timestamps were preserved by comparing source and target
     const sourceRows = await transaction.any(
@@ -585,11 +602,8 @@ describe("Synchronizer.synchronize", () => {
       `,
     );
 
-    expect(targetRows).toHaveLength(3);
     // Timestamps should match between source and target
-    expect(targetRows[0].created_at).toBe(sourceRows[0].created_at);
-    expect(targetRows[1].created_at).toBe(sourceRows[1].created_at);
-    expect(targetRows[2].created_at).toBeNull();
+    expect(targetRows).toEqual(sourceRows);
   });
 
   test("detects differences in timestamp columns", async ({ transaction }) => {
@@ -621,9 +635,12 @@ describe("Synchronizer.synchronize", () => {
       batches.push(batch);
     }
 
-    expect(batches).toHaveLength(1);
-    expect(batches[0].matchingRows).toBe(1); // id=1 matches
-    expect(batches[0].rowsUpdated).toBe(1); // id=2 has different timestamp
+    expect(batches).toEqual([
+      expect.objectContaining({
+        matchingRows: 1, // id=1 matches
+        rowsUpdated: 1, // id=2 has different timestamp
+      }),
+    ]);
   });
 
   test("handles bigint columns", async ({ transaction }) => {
@@ -650,8 +667,7 @@ describe("Synchronizer.synchronize", () => {
       batches.push(batch);
     }
 
-    expect(batches).toHaveLength(1);
-    expect(batches[0].rowsInserted).toBe(3);
+    expect(batches).toEqual([expect.objectContaining({ rowsInserted: 3 })]);
 
     // Verify bigint values were preserved
     const rows = await transaction.any(
@@ -664,9 +680,11 @@ describe("Synchronizer.synchronize", () => {
         SELECT id, view_count FROM posts_intermediate ORDER BY id
       `,
     );
-    expect(rows[0].view_count).toBe(9007199254740993n);
-    expect(rows[1].view_count).toBe(9007199254740994n);
-    expect(rows[2].view_count).toBeNull();
+    expect(rows).toEqual([
+      { id: 1n, view_count: 9007199254740993n },
+      { id: 2n, view_count: 9007199254740994n },
+      { id: 3n, view_count: null },
+    ]);
   });
 
   test("detects differences in bigint columns", async ({ transaction }) => {
@@ -696,9 +714,12 @@ describe("Synchronizer.synchronize", () => {
       batches.push(batch);
     }
 
-    expect(batches).toHaveLength(1);
-    expect(batches[0].matchingRows).toBe(1); // id=1 matches (same bigint)
-    expect(batches[0].rowsUpdated).toBe(1); // id=2 has different view_count
+    expect(batches).toEqual([
+      expect.objectContaining({
+        matchingRows: 1, // id=1 matches (same bigint)
+        rowsUpdated: 1, // id=2 has different view_count
+      }),
+    ]);
   });
 
   test("handles updates with NULL values", async ({ transaction }) => {
@@ -727,8 +748,7 @@ describe("Synchronizer.synchronize", () => {
       batches.push(batch);
     }
 
-    expect(batches).toHaveLength(1);
-    expect(batches[0].rowsUpdated).toBe(2);
+    expect(batches).toEqual([expect.objectContaining({ rowsUpdated: 2 })]);
 
     // Verify NULL handling in updates
     const rows = await transaction.any(
@@ -741,8 +761,10 @@ describe("Synchronizer.synchronize", () => {
         SELECT id, description FROM posts_intermediate ORDER BY id
       `,
     );
-    expect(rows[0].description).toBeNull(); // Was 'had description', now NULL
-    expect(rows[1].description).toBe("now has description"); // Was NULL, now has value
+    expect(rows).toEqual([
+      { id: 1n, description: null }, // Was 'had description', now NULL
+      { id: 2n, description: "now has description" }, // Was NULL, now has value
+    ]);
   });
 
   test("handles mixed column types", async ({ transaction }) => {
@@ -781,8 +803,7 @@ describe("Synchronizer.synchronize", () => {
       batches.push(batch);
     }
 
-    expect(batches).toHaveLength(1);
-    expect(batches[0].rowsInserted).toBe(2);
+    expect(batches).toEqual([expect.objectContaining({ rowsInserted: 2 })]);
 
     // Verify all types were preserved
     const rows = await transaction.any(
@@ -799,15 +820,21 @@ describe("Synchronizer.synchronize", () => {
         FROM posts_intermediate ORDER BY id
       `,
     );
-    expect(rows[0].name).toBe("post1");
-    expect(rows[0].view_count).toBe(1000n);
-    expect(rows[0].rating).toBe("4.50");
-    expect(rows[0].is_published).toBe(true);
 
-    expect(rows[1].name).toBe("post2");
-    expect(rows[1].view_count).toBeNull();
-    expect(rows[1].rating).toBeNull();
-    expect(rows[1].is_published).toBe(false);
+    expect(rows).toEqual([
+      expect.objectContaining({
+        name: "post1",
+        view_count: 1000n,
+        rating: "4.50",
+        is_published: true,
+      }),
+      expect.objectContaining({
+        name: "post2",
+        view_count: null,
+        rating: null,
+        is_published: false,
+      }),
+    ]);
 
     // Verify timestamps match between source and target
     const sourceTs = await transaction.one(
@@ -823,4 +850,3 @@ describe("Synchronizer.synchronize", () => {
     expect(targetTs.ts).toBe(sourceTs.ts);
   });
 });
-

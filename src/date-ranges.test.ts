@@ -228,10 +228,7 @@ describe("DateRanges", () => {
       });
 
       const result = [...ranges];
-      expect(result).toHaveLength(3);
-      expect(result[0].suffix).toBe("202511");
-      expect(result[1].suffix).toBe("202512");
-      expect(result[2].suffix).toBe("202601");
+      expect(result.map((r) => r.suffix)).toEqual(["202511", "202512", "202601"]);
     });
 
     it("handles only future partitions", () => {
@@ -243,10 +240,7 @@ describe("DateRanges", () => {
       });
 
       const result = [...ranges];
-      expect(result).toHaveLength(3);
-      expect(result[0].suffix).toBe("202601");
-      expect(result[1].suffix).toBe("202602");
-      expect(result[2].suffix).toBe("202603");
+      expect(result.map((r) => r.suffix)).toEqual(["202601", "202602", "202603"]);
     });
   });
 });
