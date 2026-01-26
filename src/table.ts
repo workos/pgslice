@@ -172,28 +172,6 @@ export class Table {
   }
 
   /**
-   * Gets the cast type for a column (date or timestamptz).
-   * @deprecated Use columns() instead, which returns ColumnInfo with cast included.
-   */
-  async columnCast(
-    tx: DatabaseTransactionConnection,
-    column: string,
-  ): Promise<Cast> {
-    const result = await tx.maybeOne(
-      sql.type(z.object({ data_type: z.string() }))`
-        SELECT data_type FROM information_schema.columns
-        WHERE table_schema = ${this.schema}
-          AND table_name = ${this.name}
-          AND column_name = ${column}
-      `,
-    );
-    if (!result) {
-      throw new Error(`Column not found: ${column}`);
-    }
-    return dataTypeToCast(result.data_type) ?? "date";
-  }
-
-  /**
    * Gets index definitions for this table (excluding primary key).
    */
   async indexDefs(tx: DatabaseTransactionConnection): Promise<string[]> {
