@@ -39,8 +39,6 @@ function transformIdValue(
   return val;
 }
 
-const DEFAULT_SCHEMA = "public";
-
 /**
  * Derives the appropriate Cast type from a PostgreSQL data type string.
  * Returns null for types that don't require casting for partition operations.
@@ -87,7 +85,7 @@ export class Table {
    * Parses a table name string into a Table instance.
    * If no schema is provided, defaults to "public".
    */
-  static parse(name: string, defaultSchema: string = DEFAULT_SCHEMA): Table {
+  static parse(name: string, defaultSchema: string = "public"): Table {
     if (name.includes(".")) {
       const [schema, tableName] = name.split(".", 2);
       return new Table(schema, tableName);
