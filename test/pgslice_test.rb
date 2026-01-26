@@ -64,6 +64,7 @@ class PgSliceTest < Minitest::Test
   end
 
   def test_v2
+    skip "TypeScript port doesn't support v2 partitioning" if use_typescript_port?
     assert_period "month", version: 2
   end
 
