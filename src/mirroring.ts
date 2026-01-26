@@ -35,23 +35,18 @@ export class Mirroring {
     const primaryKeyColumns = await this.#source.primaryKey(tx);
 
     const functionSql = this.#buildFunctionSql(columns, primaryKeyColumns);
-    const dropTriggerSql = this.#buildDropTriggerSql();
-    const createTriggerSql = this.#buildCreateTriggerSql();
 
     await tx.query(sql.type(z.object({}))`${functionSql}`);
-    await tx.query(sql.type(z.object({}))`${dropTriggerSql}`);
-    await tx.query(sql.type(z.object({}))`${createTriggerSql}`);
+    await tx.query(sql.type(z.object({}))`${this.#dropTriggerSql}`);
+    await tx.query(sql.type(z.object({}))`${this.#createTriggerSql}`);
   }
 
   /**
    * Disables mirroring by dropping the trigger and function.
    */
   async disable(tx: DatabaseTransactionConnection): Promise<void> {
-    const dropTriggerSql = this.#buildDropTriggerSql();
-    const dropFunctionSql = this.#buildDropFunctionSql();
-
-    await tx.query(sql.type(z.object({}))`${dropTriggerSql}`);
-    await tx.query(sql.type(z.object({}))`${dropFunctionSql}`);
+    await tx.query(sql.type(z.object({}))`${this.#dropTriggerSql}`);
+    await tx.query(sql.type(z.object({}))`${this.#dropFunctionSql}`);
   }
 
   get #functionName() {
@@ -151,13 +146,13 @@ export class Mirroring {
     `;
   }
 
-  #buildDropTriggerSql() {
+  get #dropTriggerSql() {
     return sql.fragment`
       DROP TRIGGER IF EXISTS ${this.#triggerName} ON ${this.#source.toSqlIdentifier()}
     `;
   }
 
-  #buildCreateTriggerSql() {
+  get #createTriggerSql() {
     return sql.fragment`
       CREATE TRIGGER ${this.#triggerName}
       AFTER INSERT OR UPDATE OR DELETE ON ${this.#source.toSqlIdentifier()}
@@ -165,7 +160,7 @@ export class Mirroring {
     `;
   }
 
-  #buildDropFunctionSql() {
+  get #dropFunctionSql() {
     return sql.fragment`
       DROP FUNCTION IF EXISTS ${this.#functionName}()
     `;
