@@ -3,34 +3,26 @@ import { sql } from "slonik";
 import { z } from "zod";
 
 import { pgsliceTest as test } from "./testing/index.js";
-import { Table } from "./table.js";
 import { Filler } from "./filler.js";
 
 describe("Filler", () => {
   describe("with numeric IDs", () => {
     test("fills data in batches", async ({ transaction }) => {
-      // Create source and destination tables
+      // Create source and destination tables with proper naming
       await transaction.query(sql.unsafe`
-        CREATE TABLE source_table (id BIGSERIAL PRIMARY KEY, name TEXT)
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
       `);
       await transaction.query(sql.unsafe`
-        CREATE TABLE dest_table (id BIGSERIAL PRIMARY KEY, name TEXT)
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
       `);
       await transaction.query(sql.unsafe`
-        INSERT INTO source_table (name)
+        INSERT INTO posts (name)
         SELECT 'item_' || i FROM generate_series(1, 25) AS i
       `);
 
-      const source = Table.parse("source_table");
-      const dest = Table.parse("dest_table");
-      const columns = ["id", "name"];
-
-      const filler = new Filler({
-        source,
-        dest,
-        primaryKeyColumn: "id",
+      const filler = await Filler.init(transaction, {
+        table: "posts",
         batchSize: 10,
-        columns,
       });
 
       const batches: Array<{ batchNumber: number }> = [];
@@ -47,36 +39,28 @@ describe("Filler", () => {
       // Verify data was copied
       const count = await transaction.one(
         sql.type(z.object({ count: z.coerce.number() }))`
-          SELECT COUNT(*)::int FROM dest_table
+          SELECT COUNT(*)::int FROM posts_intermediate
         `,
       );
       expect(count.count).toBe(25);
     });
 
-    test("respects includeStart option", async ({ transaction }) => {
+    test("respects start option", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-        CREATE TABLE source_table (id BIGSERIAL PRIMARY KEY, name TEXT)
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
       `);
       await transaction.query(sql.unsafe`
-        CREATE TABLE dest_table (id BIGSERIAL PRIMARY KEY, name TEXT)
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
       `);
       await transaction.query(sql.unsafe`
-        INSERT INTO source_table (name) VALUES ('a'), ('b'), ('c'), ('d'), ('e')
+        INSERT INTO posts (name) VALUES ('a'), ('b'), ('c'), ('d'), ('e')
       `);
-
-      const source = Table.parse("source_table");
-      const dest = Table.parse("dest_table");
-      const columns = ["id", "name"];
 
       // Start from 2, inclusive (should include id=2)
-      const filler = new Filler({
-        source,
-        dest,
-        primaryKeyColumn: "id",
+      const filler = await Filler.init(transaction, {
+        table: "posts",
         batchSize: 10,
-        startingId: 2n,
-        includeStart: true,
-        columns,
+        start: "2",
       });
 
       for await (const _batch of filler.fill(transaction)) {
@@ -85,7 +69,7 @@ describe("Filler", () => {
 
       const count = await transaction.one(
         sql.type(z.object({ count: z.coerce.number() }))`
-          SELECT COUNT(*)::int FROM dest_table
+          SELECT COUNT(*)::int FROM posts_intermediate
         `,
       );
       expect(count.count).toBe(4); // IDs 2, 3, 4, 5
@@ -93,22 +77,15 @@ describe("Filler", () => {
 
     test("handles empty source table", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-        CREATE TABLE source_table (id BIGSERIAL PRIMARY KEY, name TEXT)
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
       `);
       await transaction.query(sql.unsafe`
-        CREATE TABLE dest_table (id BIGSERIAL PRIMARY KEY, name TEXT)
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
       `);
 
-      const source = Table.parse("source_table");
-      const dest = Table.parse("dest_table");
-      const columns = ["id", "name"];
-
-      const filler = new Filler({
-        source,
-        dest,
-        primaryKeyColumn: "id",
+      const filler = await Filler.init(transaction, {
+        table: "posts",
         batchSize: 10,
-        columns,
       });
 
       const batches = [];
@@ -123,13 +100,13 @@ describe("Filler", () => {
   describe("with ULID IDs", () => {
     test("fills data in batches", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-        CREATE TABLE source_table (id TEXT PRIMARY KEY, name TEXT)
+        CREATE TABLE posts (id TEXT PRIMARY KEY, name TEXT)
       `);
       await transaction.query(sql.unsafe`
-        CREATE TABLE dest_table (id TEXT PRIMARY KEY, name TEXT)
+        CREATE TABLE posts_intermediate (id TEXT PRIMARY KEY, name TEXT)
       `);
       await transaction.query(sql.unsafe`
-        INSERT INTO source_table (id, name) VALUES
+        INSERT INTO posts (id, name) VALUES
           ('01ARZ3NDEKTSV4RRFFQ69G5FAA', 'a'),
           ('01ARZ3NDEKTSV4RRFFQ69G5FAB', 'b'),
           ('01ARZ3NDEKTSV4RRFFQ69G5FAC', 'c'),
@@ -137,16 +114,9 @@ describe("Filler", () => {
           ('01ARZ3NDEKTSV4RRFFQ69G5FAE', 'e')
       `);
 
-      const source = Table.parse("source_table");
-      const dest = Table.parse("dest_table");
-      const columns = ["id", "name"];
-
-      const filler = new Filler({
-        source,
-        dest,
-        primaryKeyColumn: "id",
+      const filler = await Filler.init(transaction, {
+        table: "posts",
         batchSize: 2,
-        columns,
       });
 
       const batches: Array<{ batchNumber: number }> = [];
@@ -160,7 +130,7 @@ describe("Filler", () => {
       // Verify data was copied
       const count = await transaction.one(
         sql.type(z.object({ count: z.coerce.number() }))`
-          SELECT COUNT(*)::int FROM dest_table
+          SELECT COUNT(*)::int FROM posts_intermediate
         `,
       );
       expect(count.count).toBe(5);
@@ -170,29 +140,22 @@ describe("Filler", () => {
   describe("with ON CONFLICT DO NOTHING", () => {
     test("handles duplicate keys gracefully", async ({ transaction }) => {
       await transaction.query(sql.unsafe`
-        CREATE TABLE source_table (id BIGSERIAL PRIMARY KEY, name TEXT)
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
       `);
       await transaction.query(sql.unsafe`
-        CREATE TABLE dest_table (id BIGSERIAL PRIMARY KEY, name TEXT)
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
       `);
       await transaction.query(sql.unsafe`
-        INSERT INTO source_table (name) VALUES ('a'), ('b'), ('c')
+        INSERT INTO posts (name) VALUES ('a'), ('b'), ('c')
       `);
       // Pre-populate dest with some data
       await transaction.query(sql.unsafe`
-        INSERT INTO dest_table (id, name) VALUES (1, 'existing'), (2, 'existing')
+        INSERT INTO posts_intermediate (id, name) VALUES (1, 'existing'), (2, 'existing')
       `);
 
-      const source = Table.parse("source_table");
-      const dest = Table.parse("dest_table");
-      const columns = ["id", "name"];
-
-      const filler = new Filler({
-        source,
-        dest,
-        primaryKeyColumn: "id",
+      const filler = await Filler.init(transaction, {
+        table: "posts",
         batchSize: 10,
-        columns,
       });
 
       for await (const _batch of filler.fill(transaction)) {
@@ -202,7 +165,7 @@ describe("Filler", () => {
       // Should have 3 rows (2 existing + 1 new, duplicates ignored)
       const count = await transaction.one(
         sql.type(z.object({ count: z.coerce.number() }))`
-          SELECT COUNT(*)::int FROM dest_table
+          SELECT COUNT(*)::int FROM posts_intermediate
         `,
       );
       expect(count.count).toBe(3);
@@ -210,7 +173,7 @@ describe("Filler", () => {
       // Existing data should be unchanged
       const existing = await transaction.one(
         sql.type(z.object({ name: z.string() }))`
-          SELECT name FROM dest_table WHERE id = 1
+          SELECT name FROM posts_intermediate WHERE id = 1
         `,
       );
       expect(existing.name).toBe("existing");

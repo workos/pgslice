@@ -13,14 +13,12 @@ import type {
   EnableMirroringOptions,
   FillBatchResult,
   FillOptions,
-  IdValue,
   Period,
   PrepOptions,
-  TimeFilter,
 } from "./types.js";
 import { isPeriod } from "./types.js";
 import { Table, getServerVersionNum } from "./table.js";
-import { DateRanges, advanceDate, parsePartitionDate } from "./date-ranges.js";
+import { DateRanges } from "./date-ranges.js";
 import { formatDateForSql, rawSql } from "./sql-utils.js";
 import { Mirroring } from "./mirroring.js";
 import { Filler } from "./filler.js";
@@ -349,116 +347,7 @@ export class Pgslice {
    * @yields FillBatchResult after each batch is processed
    */
   async *fill(options: FillOptions): AsyncGenerator<FillBatchResult> {
-    const table = Table.parse(options.table);
-
-    // Resolve source and dest tables based on swapped option
-    const sourceTable = options.swapped ? table.retired() : table;
-    const destTable = options.swapped ? table : table.intermediate();
-
-    // Use a transaction for the initial setup/metadata reads
-    const setupResult = await this.start(async (tx) => {
-      if (!(await sourceTable.exists(tx))) {
-        throw new Error(`Table not found: ${sourceTable.toString()}`);
-      }
-      if (!(await destTable.exists(tx))) {
-        throw new Error(`Table not found: ${destTable.toString()}`);
-      }
-
-      // Get partition settings from dest table for time filtering
-      const settings = await destTable.fetchSettings(tx);
-
-      // Determine time filter if dest is partitioned
-      let timeFilter: TimeFilter | undefined;
-      if (settings) {
-        const partitions = await destTable.partitions(tx);
-        if (partitions.length > 0) {
-          const firstPartition = partitions[0];
-          const lastPartition = partitions[partitions.length - 1];
-
-          const startingTime = parsePartitionDate(
-            firstPartition.name,
-            settings.period,
-          );
-          const lastPartitionDate = parsePartitionDate(
-            lastPartition.name,
-            settings.period,
-          );
-          const endingTime = advanceDate(lastPartitionDate, settings.period, 1);
-
-          timeFilter = {
-            column: settings.column,
-            cast: settings.cast,
-            startingTime,
-            endingTime,
-          };
-        }
-      }
-
-      // Determine which table to get the schema (columns, primary key) from
-      let schemaTable: Table;
-      if (settings) {
-        const partitions = await destTable.partitions(tx);
-        schemaTable =
-          partitions.length > 0 ? partitions[partitions.length - 1] : table;
-      } else {
-        schemaTable = table;
-      }
-
-      // Get primary key
-      const primaryKeyColumns = await schemaTable.primaryKey(tx);
-      if (primaryKeyColumns.length === 0) {
-        throw new Error("No primary key");
-      }
-      const primaryKeyColumn = primaryKeyColumns[0];
-
-      // Get columns from source table
-      const columns = await sourceTable.columns(tx);
-
-      // Determine starting ID and includeStart flag
-      let startingId: IdValue | undefined;
-      let includeStart = false;
-
-      if (options.start !== undefined) {
-        // Use the provided start value (inclusive)
-        includeStart = true;
-        // Parse as bigint if numeric, otherwise keep as string (ULID)
-        startingId = /^\d+$/.test(options.start)
-          ? BigInt(options.start)
-          : options.start;
-      } else if (options.swapped) {
-        // Get max from dest - resume from where we left off (exclusive)
-        const maxSourceId = await sourceTable.maxId(tx, primaryKeyColumn);
-        const destMaxId = await destTable.maxId(tx, primaryKeyColumn, {
-          below: maxSourceId ?? undefined,
-        });
-        startingId = destMaxId ?? undefined;
-      } else {
-        // Get max from dest - resume from where we left off (exclusive)
-        const destMaxId = await destTable.maxId(tx, primaryKeyColumn);
-        startingId = destMaxId ?? undefined;
-      }
-
-      return {
-        sourceTable,
-        destTable,
-        primaryKeyColumn,
-        columns,
-        startingId,
-        includeStart,
-        timeFilter,
-      };
-    });
-
-    const filler = new Filler({
-      source: setupResult.sourceTable,
-      dest: setupResult.destTable,
-      primaryKeyColumn: setupResult.primaryKeyColumn,
-      batchSize: options.batchSize ?? 10_000,
-      columns: setupResult.columns,
-      startingId: setupResult.startingId,
-      includeStart: setupResult.includeStart,
-      timeFilter: setupResult.timeFilter,
-    });
+    const filler = await this.start((tx) => Filler.init(tx, options));
 
     for await (const batch of filler.fill(this.connection)) {
       yield batch;
