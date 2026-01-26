@@ -170,3 +170,11 @@ export interface UnswapOptions {
   table: string;
   lockTimeout?: string;
 }
+
+/**
+ * Options for the `analyze` command.
+ */
+export interface AnalyzeOptions {
+  table: string;
+  swapped?: boolean;
+}

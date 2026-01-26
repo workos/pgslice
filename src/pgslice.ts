@@ -9,6 +9,7 @@ import { z } from "zod";
 
 import type {
   AddPartitionsOptions,
+  AnalyzeOptions,
   ColumnInfo,
   DisableMirroringOptions,
   EnableMirroringOptions,
@@ -423,5 +424,28 @@ export class Pgslice {
       lockTimeout: options.lockTimeout,
     });
     await swapper.execute(tx);
+  }
+
+  /**
+   * Analyzes a table to update PostgreSQL statistics for query optimization.
+   *
+   * By default, analyzes the intermediate table. With `swapped: true`,
+   * analyzes the main table after a swap operation.
+   *
+   * @returns The table that was analyzed
+   */
+  async analyze(options: AnalyzeOptions): Promise<Table> {
+    const table = Table.parse(options.table);
+    const targetTable = options.swapped ? table : table.intermediate();
+
+    if (!(await targetTable.exists(this.connection))) {
+      throw new Error(`Table not found: ${targetTable.toString()}`);
+    }
+
+    await this.connection.query(
+      sql.type(z.object({}))`ANALYZE VERBOSE ${targetTable.toSqlIdentifier()}`,
+    );
+
+    return targetTable;
   }
 }

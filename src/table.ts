@@ -142,8 +142,8 @@ export class Table {
   /**
    * Checks if this table exists in the database.
    */
-  async exists(tx: DatabaseTransactionConnection): Promise<boolean> {
-    const result = await tx.one(sql.type(
+  async exists(connection: CommonQueryMethods): Promise<boolean> {
+    const result = await connection.one(sql.type(
       z.object({ count: z.coerce.number() }),
     )`
       SELECT COUNT(*) FROM pg_catalog.pg_tables
@@ -269,9 +269,9 @@ export class Table {
    * Fetches the partition settings from this table's comment.
    */
   async fetchSettings(
-    tx: DatabaseTransactionConnection,
+    connection: CommonQueryMethods,
   ): Promise<TableSettings | null> {
-    const result = await tx.maybeOne(
+    const result = await connection.maybeOne(
       sql.type(z.object({ comment: z.string().nullable() }))`
         SELECT obj_description(${this.toRegclassLiteral()}::regclass) AS comment
       `,
