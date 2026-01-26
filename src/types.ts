@@ -155,3 +155,18 @@ export interface SwapOptions {
   table: string;
   lockTimeout?: string;
 }
+
+/**
+ * Direction of a swap operation.
+ * - "forward": swap from original to intermediate (swap command)
+ * - "reverse": swap from retired back to original (unswap command)
+ */
+export type SwapDirection = "forward" | "reverse";
+
+/**
+ * Options for the `unswap` command.
+ */
+export interface UnswapOptions {
+  table: string;
+  lockTimeout?: string;
+}

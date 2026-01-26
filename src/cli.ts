@@ -7,6 +7,7 @@ import { FillCommand } from "./commands/fill.js";
 import { PrepCommand } from "./commands/prep.js";
 import { SwapCommand } from "./commands/swap.js";
 import { SynchronizeCommand } from "./commands/synchronize.js";
+import { UnswapCommand } from "./commands/unswap.js";
 
 export function createCli(): Cli {
   const cli = new Cli({
@@ -24,6 +25,7 @@ export function createCli(): Cli {
   cli.register(PrepCommand);
   cli.register(SwapCommand);
   cli.register(SynchronizeCommand);
+  cli.register(UnswapCommand);
 
   return cli;
 }
