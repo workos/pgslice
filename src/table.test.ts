@@ -219,3 +219,104 @@ describe("Table.columns", () => {
     expect(columns.map((c) => c.name)).toEqual(["id", "name"]);
   });
 });
+
+describe("Table.sequences", () => {
+  test("returns sequences attached to SERIAL columns", async ({
+    transaction,
+  }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table (
+        id SERIAL PRIMARY KEY,
+        name TEXT
+      )
+    `);
+
+    const table = Table.parse("test_table");
+    const sequences = await table.sequences(transaction);
+
+    expect(sequences).toHaveLength(1);
+    expect(sequences[0]).toEqual({
+      sequenceSchema: "public",
+      sequenceName: "test_table_id_seq",
+      relatedColumn: "id",
+    });
+  });
+
+  test("returns sequences attached to BIGSERIAL columns", async ({
+    transaction,
+  }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table (
+        id BIGSERIAL PRIMARY KEY,
+        name TEXT
+      )
+    `);
+
+    const table = Table.parse("test_table");
+    const sequences = await table.sequences(transaction);
+
+    expect(sequences).toHaveLength(1);
+    expect(sequences[0]).toEqual({
+      sequenceSchema: "public",
+      sequenceName: "test_table_id_seq",
+      relatedColumn: "id",
+    });
+  });
+
+  test("returns empty array when table has no sequences", async ({
+    transaction,
+  }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table (
+        id INTEGER PRIMARY KEY,
+        name TEXT
+      )
+    `);
+
+    const table = Table.parse("test_table");
+    const sequences = await table.sequences(transaction);
+
+    expect(sequences).toEqual([]);
+  });
+
+  test("returns multiple sequences for multiple SERIAL columns", async ({
+    transaction,
+  }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table (
+        id SERIAL PRIMARY KEY,
+        secondary_id SERIAL,
+        name TEXT
+      )
+    `);
+
+    const table = Table.parse("test_table");
+    const sequences = await table.sequences(transaction);
+
+    expect(sequences).toHaveLength(2);
+    expect(sequences.map((s) => s.relatedColumn).sort()).toEqual([
+      "id",
+      "secondary_id",
+    ]);
+  });
+
+  test("works with schema-qualified tables", async ({ transaction }) => {
+    await transaction.query(sql.unsafe`CREATE SCHEMA test_schema`);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_schema.test_table (
+        id SERIAL PRIMARY KEY,
+        name TEXT
+      )
+    `);
+
+    const table = Table.parse("test_schema.test_table");
+    const sequences = await table.sequences(transaction);
+
+    expect(sequences).toHaveLength(1);
+    expect(sequences[0]).toEqual({
+      sequenceSchema: "test_schema",
+      sequenceName: "test_table_id_seq",
+      relatedColumn: "id",
+    });
+  });
+});

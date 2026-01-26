@@ -16,6 +16,7 @@ import type {
   FillOptions,
   Period,
   PrepOptions,
+  SwapOptions,
   SynchronizeBatchResult,
   SynchronizeOptions,
 } from "./types.js";
@@ -384,5 +385,84 @@ export class Pgslice {
     for await (const batch of synchronizer.synchronize(this.connection)) {
       yield batch;
     }
+  }
+
+  /**
+   * Swaps the intermediate table with the original table.
+   *
+   * This is the final step in the partitioning workflow. After the swap:
+   * - The original table becomes `{table}_retired`
+   * - The intermediate table becomes `{table}` (the main table)
+   * - Sequence ownership is transferred to the new main table
+   * - A retired mirroring trigger is enabled to keep the retired table in sync
+   */
+  async swap(
+    tx: DatabaseTransactionConnection,
+    options: SwapOptions,
+  ): Promise<void> {
+    const table = Table.parse(options.table);
+    const intermediate = table.intermediate();
+    const retired = table.retired();
+
+    if (!(await table.exists(tx))) {
+      throw new Error(`Table not found: ${table.toString()}`);
+    }
+    if (!(await intermediate.exists(tx))) {
+      throw new Error(`Table not found: ${intermediate.toString()}`);
+    }
+    if (await retired.exists(tx)) {
+      throw new Error(`Table already exists: ${retired.toString()}`);
+    }
+
+    const lockTimeout = options.lockTimeout ?? "5s";
+
+    // Set lock timeout
+    await tx.query(
+      sql.type(z.object({}))`
+        SET LOCAL lock_timeout = ${sql.literalValue(lockTimeout)}
+      `,
+    );
+
+    // Disable intermediate mirroring trigger
+    await new Mirroring({
+      source: table,
+      target: intermediate,
+      mode: "intermediate",
+    }).disable(tx);
+
+    // Rename original table to retired
+    await tx.query(
+      sql.type(z.object({}))`
+        ALTER TABLE ${table.toSqlIdentifier()} RENAME TO ${sql.identifier([retired.name])}
+      `,
+    );
+
+    // Rename intermediate to original
+    await tx.query(
+      sql.type(z.object({}))`
+        ALTER TABLE ${intermediate.toSqlIdentifier()} RENAME TO ${sql.identifier([table.name])}
+      `,
+    );
+
+    // Update sequence ownership
+    // After rename, sequences are still attached to retired table, so query from there
+    const sequences = await retired.sequences(tx);
+    for (const seq of sequences) {
+      await tx.query(
+        sql.type(z.object({}))`
+          ALTER SEQUENCE ${sql.identifier([seq.sequenceSchema, seq.sequenceName])}
+          OWNED BY ${sql.identifier([table.schema, table.name, seq.relatedColumn])}
+        `,
+      );
+    }
+
+    // Enable retired mirroring trigger
+    // After swap, table now refers to the new main table (formerly intermediate)
+    // and retired refers to the old main table
+    await new Mirroring({
+      source: table,
+      target: retired,
+      mode: "retired",
+    }).enable(tx);
   }
 }

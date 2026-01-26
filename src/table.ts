@@ -5,7 +5,7 @@ import {
   IdentifierSqlToken,
 } from "slonik";
 import { z } from "zod";
-import type { Cast, ColumnInfo, IdValue } from "./types.js";
+import type { Cast, ColumnInfo, IdValue, SequenceInfo } from "./types.js";
 import { TableSettings } from "./table-settings.js";
 import { formatDateForSql } from "./sql-utils.js";
 
@@ -349,5 +349,41 @@ export class Table {
     );
 
     return transformIdValue(result?.min_id ?? null);
+  }
+
+  /**
+   * Gets sequences attached to this table's columns.
+   */
+  async sequences(tx: DatabaseTransactionConnection): Promise<SequenceInfo[]> {
+    const result = await tx.any(
+      sql.type(
+        z.object({
+          sequence_schema: z.string(),
+          sequence_name: z.string(),
+          related_column: z.string(),
+        }),
+      )`
+        SELECT
+          a.attname AS related_column,
+          n.nspname AS sequence_schema,
+          s.relname AS sequence_name
+        FROM pg_class s
+          INNER JOIN pg_depend d ON d.objid = s.oid
+          INNER JOIN pg_class t ON d.objid = s.oid AND d.refobjid = t.oid
+          INNER JOIN pg_attribute a ON (d.refobjid, d.refobjsubid) = (a.attrelid, a.attnum)
+          INNER JOIN pg_namespace n ON n.oid = s.relnamespace
+          INNER JOIN pg_namespace nt ON nt.oid = t.relnamespace
+        WHERE s.relkind = 'S'
+          AND nt.nspname = ${this.schema}
+          AND t.relname = ${this.name}
+        ORDER BY s.relname ASC
+      `,
+    );
+
+    return result.map((row) => ({
+      sequenceSchema: row.sequence_schema,
+      sequenceName: row.sequence_name,
+      relatedColumn: row.related_column,
+    }));
   }
 }

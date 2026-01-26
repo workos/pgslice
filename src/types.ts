@@ -138,3 +138,20 @@ export interface SynchronizeBatchResult {
   rowsUpdated: number;
   rowsDeleted: number;
 }
+
+/**
+ * Information about a sequence attached to a table column.
+ */
+export interface SequenceInfo {
+  sequenceSchema: string;
+  sequenceName: string;
+  relatedColumn: string;
+}
+
+/**
+ * Options for the `swap` command.
+ */
+export interface SwapOptions {
+  table: string;
+  lockTimeout?: string;
+}

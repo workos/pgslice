@@ -5,6 +5,7 @@ import { DisableMirroringCommand } from "./commands/disable-mirroring.js";
 import { EnableMirroringCommand } from "./commands/enable-mirroring.js";
 import { FillCommand } from "./commands/fill.js";
 import { PrepCommand } from "./commands/prep.js";
+import { SwapCommand } from "./commands/swap.js";
 import { SynchronizeCommand } from "./commands/synchronize.js";
 
 export function createCli(): Cli {
@@ -21,6 +22,7 @@ export function createCli(): Cli {
   cli.register(EnableMirroringCommand);
   cli.register(FillCommand);
   cli.register(PrepCommand);
+  cli.register(SwapCommand);
   cli.register(SynchronizeCommand);
 
   return cli;

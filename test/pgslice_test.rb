@@ -545,7 +545,12 @@ class PgSliceTest < Minitest::Test
 
     # TODO check sequence ownership
     output = run_command "swap Posts"
-    assert_match "SET LOCAL lock_timeout = '5s';", output
+    # TypeScript port outputs a success message instead of SQL statements
+    if use_typescript_port?
+      assert_match(/Swapped Posts with intermediate table/, output)
+    else
+      assert_match "SET LOCAL lock_timeout = '5s';", output
+    end
     assert table_exists?("Posts")
     assert table_exists?("Posts_retired")
     refute table_exists?("Posts_intermediate")
