@@ -72,7 +72,7 @@ export class Pgslice {
       throw new Error("Dry run not yet supported.");
     }
 
-    return this.connection.transaction(handler);
+    return this.connection.transaction(handler, 0);
   }
 
   async close(): Promise<void> {
