@@ -1,4 +1,8 @@
-import { sql, type PrimitiveValueExpression } from "slonik";
+import {
+  sql,
+  type PrimitiveValueExpression,
+  type SerializableValue,
+} from "slonik";
 import type { Cast } from "./types.js";
 
 /**
@@ -62,6 +66,14 @@ export function valueToSql(val: unknown, dataType: string) {
 
   if (dataType === "bytea" && Buffer.isBuffer(val)) {
     return sql.binary(val);
+  }
+
+  if (dataType === "jsonb" && typeof val === "object") {
+    return sql.jsonb(val as SerializableValue);
+  }
+
+  if (dataType === "json" && typeof val === "object") {
+    return sql.json(val as SerializableValue);
   }
 
   return sql.fragment`${val as PrimitiveValueExpression}`;

@@ -1027,5 +1027,213 @@ describe("Synchronizer", () => {
 
       expect(targetRows).toEqual(sourceRows);
     });
+
+    test("handles JSONB columns", async ({ transaction }) => {
+      await transaction.query(sql.unsafe`
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, metadata JSONB)
+      `);
+      await transaction.query(sql.unsafe`
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, metadata JSONB)
+      `);
+      await transaction.query(sql.unsafe`
+        INSERT INTO posts (metadata) VALUES
+          ('{"key": "value", "number": 42}'),
+          ('["a", "b", "c"]'),
+          (NULL)
+      `);
+
+      const synchronizer = await Synchronizer.init(transaction, {
+        table: "posts",
+      });
+
+      const batches = [];
+      for await (const batch of synchronizer.synchronize(transaction)) {
+        batches.push(batch);
+      }
+
+      expect(batches).toEqual([expect.objectContaining({ rowsInserted: 3 })]);
+
+      // Verify JSONB values were preserved
+      const rows = await transaction.any(
+        sql.type(
+          z.object({
+            id: z.coerce.bigint(),
+            metadata: z.unknown().nullable(),
+          }),
+        )`
+        SELECT id, metadata FROM posts_intermediate ORDER BY id
+      `,
+      );
+      expect(rows).toEqual([
+        { id: 1n, metadata: { key: "value", number: 42 } },
+        { id: 2n, metadata: ["a", "b", "c"] },
+        { id: 3n, metadata: null },
+      ]);
+    });
+
+    test("detects matching JSONB values", async ({ transaction }) => {
+      await transaction.query(sql.unsafe`
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, metadata JSONB)
+      `);
+      await transaction.query(sql.unsafe`
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, metadata JSONB)
+      `);
+      // Source has JSONB data
+      await transaction.query(sql.unsafe`
+        INSERT INTO posts (metadata) VALUES
+          ('{"key": "value", "number": 42}'),
+          ('["a", "b", "c"]')
+      `);
+      // Target has identical JSONB data
+      await transaction.query(sql.unsafe`
+        INSERT INTO posts_intermediate (id, metadata) VALUES
+          (1, '{"key": "value", "number": 42}'),
+          (2, '["a", "b", "c"]')
+      `);
+
+      const synchronizer = await Synchronizer.init(transaction, {
+        table: "posts",
+      });
+
+      const batches = [];
+      for await (const batch of synchronizer.synchronize(transaction)) {
+        batches.push(batch);
+      }
+
+      // Both rows should match - no updates needed
+      expect(batches).toEqual([
+        expect.objectContaining({
+          matchingRows: 2,
+          rowsUpdated: 0,
+          rowsInserted: 0,
+          rowsDeleted: 0,
+        }),
+      ]);
+    });
+
+    test("detects differences in JSONB columns", async ({ transaction }) => {
+      await transaction.query(sql.unsafe`
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, metadata JSONB)
+      `);
+      await transaction.query(sql.unsafe`
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, metadata JSONB)
+      `);
+      // Source has updated JSONB data
+      await transaction.query(sql.unsafe`
+        INSERT INTO posts (metadata) VALUES
+          ('{"key": "updated", "number": 100}'),
+          ('["x", "y", "z"]')
+      `);
+      // Target has old JSONB data
+      await transaction.query(sql.unsafe`
+        INSERT INTO posts_intermediate (id, metadata) VALUES
+          (1, '{"key": "old", "number": 42}'),
+          (2, '["a", "b", "c"]')
+      `);
+
+      const synchronizer = await Synchronizer.init(transaction, {
+        table: "posts",
+      });
+
+      const batches = [];
+      for await (const batch of synchronizer.synchronize(transaction)) {
+        batches.push(batch);
+      }
+
+      expect(batches).toEqual([
+        expect.objectContaining({
+          matchingRows: 0,
+          rowsUpdated: 2,
+        }),
+      ]);
+
+      // Verify rows were updated with new JSONB values
+      const rows = await transaction.any(
+        sql.type(
+          z.object({
+            id: z.coerce.bigint(),
+            metadata: z.unknown(),
+          }),
+        )`
+        SELECT id, metadata FROM posts_intermediate ORDER BY id
+      `,
+      );
+      expect(rows).toEqual([
+        { id: 1n, metadata: { key: "updated", number: 100 } },
+        { id: 2n, metadata: ["x", "y", "z"] },
+      ]);
+    });
+
+    test("handles complex nested JSONB", async ({ transaction }) => {
+      await transaction.query(sql.unsafe`
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, metadata JSONB)
+      `);
+      await transaction.query(sql.unsafe`
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, metadata JSONB)
+      `);
+      await transaction.query(sql.unsafe`
+        INSERT INTO posts (metadata) VALUES
+          ('{"nested": {"deep": {"value": [1, 2, 3]}, "array": [{"a": 1}, {"b": 2}]}}')
+      `);
+      // Target has same nested structure
+      await transaction.query(sql.unsafe`
+        INSERT INTO posts_intermediate (id, metadata) VALUES
+          (1, '{"nested": {"deep": {"value": [1, 2, 3]}, "array": [{"a": 1}, {"b": 2}]}}')
+      `);
+
+      const synchronizer = await Synchronizer.init(transaction, {
+        table: "posts",
+      });
+
+      const batches = [];
+      for await (const batch of synchronizer.synchronize(transaction)) {
+        batches.push(batch);
+      }
+
+      // Complex nested JSONB should match
+      expect(batches).toEqual([
+        expect.objectContaining({
+          matchingRows: 1,
+          rowsUpdated: 0,
+        }),
+      ]);
+    });
+
+    test("handles JSON columns (non-binary)", async ({ transaction }) => {
+      await transaction.query(sql.unsafe`
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, metadata JSON)
+      `);
+      await transaction.query(sql.unsafe`
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, metadata JSON)
+      `);
+      await transaction.query(sql.unsafe`
+        INSERT INTO posts (metadata) VALUES
+          ('{"key": "value"}'),
+          ('["item1", "item2"]')
+      `);
+      // Target has same JSON data
+      await transaction.query(sql.unsafe`
+        INSERT INTO posts_intermediate (id, metadata) VALUES
+          (1, '{"key": "value"}'),
+          (2, '["item1", "item2"]')
+      `);
+
+      const synchronizer = await Synchronizer.init(transaction, {
+        table: "posts",
+      });
+
+      const batches = [];
+      for await (const batch of synchronizer.synchronize(transaction)) {
+        batches.push(batch);
+      }
+
+      // JSON columns should also match correctly
+      expect(batches).toEqual([
+        expect.objectContaining({
+          matchingRows: 2,
+          rowsUpdated: 0,
+        }),
+      ]);
+    });
   });
 });

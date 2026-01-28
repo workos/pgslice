@@ -347,6 +347,18 @@ export class Synchronizer {
         continue;
       }
 
+      // Handle JSON/JSONB columns - PostgreSQL returns objects/arrays that need
+      // deep comparison since reference equality fails for identical values
+      if (
+        (typeof sourceVal === "object" && sourceVal !== null) ||
+        (typeof targetVal === "object" && targetVal !== null)
+      ) {
+        if (JSON.stringify(sourceVal) !== JSON.stringify(targetVal)) {
+          return true;
+        }
+        continue;
+      }
+
       if (sourceVal !== targetVal) {
         return true;
       }
