@@ -73,6 +73,11 @@ export async function getServerVersionNum(
  * Represents a database table with schema and name.
  */
 export class Table {
+  /**
+   * Fallback primary key column names if none are found in the database.
+   */
+  static primaryKeyFallback = ["id"];
+
   readonly schema: string;
   readonly name: string;
 
@@ -206,7 +211,7 @@ export class Table {
    * Gets the primary key column names for this table in order.
    */
   async primaryKey(tx: DatabaseTransactionConnection): Promise<string[]> {
-    const result = await tx.any(
+    const primaryKeys = await tx.any(
       sql.type(
         z.object({
           attname: z.string(),
@@ -231,12 +236,18 @@ export class Table {
       `,
     );
 
-    return [...result]
-      .sort((a, b) => {
-        const keys = a.indkey.split(" ");
-        return keys.indexOf(a.attnum) - keys.indexOf(b.attnum);
-      })
-      .map((r) => r.attname);
+    if (primaryKeys.length) {
+      return [...primaryKeys]
+        .sort((a, b) => {
+          const keys = a.indkey.split(" ");
+          return keys.indexOf(a.attnum) - keys.indexOf(b.attnum);
+        })
+        .map((r) => r.attname);
+    }
+
+    return (await this.columns(tx))
+      .map((col) => col.name)
+      .filter((name) => Table.primaryKeyFallback.includes(name.toLowerCase()));
   }
 
   /**

@@ -364,11 +364,12 @@ describe("Pgslice.fill", () => {
     pgslice,
     transaction,
   }) => {
+    // Tables without `id` column won't match the fallback
     await transaction.query(sql.unsafe`
-      CREATE TABLE posts (id BIGSERIAL, title TEXT)
+      CREATE TABLE posts (post_id BIGSERIAL, title TEXT)
     `);
     await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (id BIGSERIAL, title TEXT)
+      CREATE TABLE posts_intermediate (post_id BIGSERIAL, title TEXT)
     `);
 
     const error = await (async () => {

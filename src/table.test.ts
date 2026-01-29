@@ -320,3 +320,93 @@ describe("Table.sequences", () => {
     });
   });
 });
+
+describe("Table.primaryKey", () => {
+  test("returns single column primary key", async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table (id BIGSERIAL PRIMARY KEY, name TEXT)
+    `);
+
+    const table = Table.parse("test_table");
+    const primaryKey = await table.primaryKey(transaction);
+
+    expect(primaryKey).toEqual(["id"]);
+  });
+
+  test("returns composite primary key in correct order", async ({
+    transaction,
+  }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table (
+        tenant_id BIGINT NOT NULL,
+        id BIGINT NOT NULL,
+        name TEXT,
+        PRIMARY KEY (tenant_id, id)
+      )
+    `);
+
+    const table = Table.parse("test_table");
+    const primaryKey = await table.primaryKey(transaction);
+
+    expect(primaryKey).toEqual(["tenant_id", "id"]);
+  });
+
+  test("falls back to id column when no primary key constraint exists", async ({
+    transaction,
+  }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table (id BIGINT, name TEXT)
+    `);
+
+    const table = Table.parse("test_table");
+    const primaryKey = await table.primaryKey(transaction);
+
+    expect(primaryKey).toEqual(["id"]);
+  });
+
+  test("returns empty array when no primary key and no fallback columns", async ({
+    transaction,
+  }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table (user_id BIGINT, name TEXT)
+    `);
+
+    const table = Table.parse("test_table");
+    const primaryKey = await table.primaryKey(transaction);
+
+    expect(primaryKey).toEqual([]);
+  });
+
+  test("fallback respects primaryKeyFallback static property", async ({
+    transaction,
+  }) => {
+    const originalFallback = Table.primaryKeyFallback;
+
+    try {
+      Table.primaryKeyFallback = ["user_id"];
+
+      await transaction.query(sql.unsafe`
+        CREATE TABLE test_table (user_id BIGINT, name TEXT)
+      `);
+
+      const table = Table.parse("test_table");
+      const primaryKey = await table.primaryKey(transaction);
+
+      expect(primaryKey).toEqual(["user_id"]);
+    } finally {
+      Table.primaryKeyFallback = originalFallback;
+    }
+  });
+
+  test("fallback is case-insensitive", async ({ transaction }) => {
+    // Column "Id" (capital I) should match fallback "id" (lowercase)
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table ("Id" BIGINT, name TEXT)
+    `);
+
+    const table = Table.parse("test_table");
+    const primaryKey = await table.primaryKey(transaction);
+
+    expect(primaryKey).toEqual(["Id"]);
+  });
+});

@@ -89,12 +89,12 @@ describe("Synchronizer", () => {
     test("throws when primary key not found and not specified", async ({
       transaction,
     }) => {
-      // Create tables without primary key
+      // Create tables without primary key and without `id` column (fallback)
       await transaction.query(sql.unsafe`
-        CREATE TABLE posts (id BIGSERIAL, name TEXT)
+        CREATE TABLE posts (post_id BIGSERIAL, name TEXT)
       `);
       await transaction.query(sql.unsafe`
-        CREATE TABLE posts_intermediate (id BIGSERIAL, name TEXT)
+        CREATE TABLE posts_intermediate (post_id BIGSERIAL, name TEXT)
       `);
       await transaction.query(sql.unsafe`
         INSERT INTO posts (name) VALUES ('test')
