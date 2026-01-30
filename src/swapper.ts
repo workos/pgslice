@@ -1,9 +1,9 @@
-import { DatabaseTransactionConnection, sql } from "slonik";
-import { z } from "zod";
+import { DatabaseTransactionConnection } from "slonik";
 
 import { Mirroring } from "./mirroring.js";
 import { Table } from "./table.js";
 import type { SwapDirection } from "./types.js";
+import { sql } from "./sql-utils.js";
 
 interface SwapperOptions {
   table: string;
@@ -99,7 +99,7 @@ export class Swapper {
 
   async #setLockTimeout(tx: DatabaseTransactionConnection): Promise<void> {
     await tx.query(
-      sql.type(z.object({}))`
+      sql.typeAlias("void")`
         SET LOCAL lock_timeout = ${sql.literalValue(this.#lockTimeout)}
       `,
     );
@@ -124,13 +124,13 @@ export class Swapper {
    */
   async #renameTables(tx: DatabaseTransactionConnection): Promise<void> {
     await tx.query(
-      sql.type(z.object({}))`
+      sql.typeAlias("void")`
         ALTER TABLE ${this.#table.sqlIdentifier} RENAME TO ${sql.identifier([this.#targetTable.name])}
       `,
     );
 
     await tx.query(
-      sql.type(z.object({}))`
+      sql.typeAlias("void")`
         ALTER TABLE ${this.#sourceTable.sqlIdentifier} RENAME TO ${sql.identifier([this.#table.name])}
       `,
     );
@@ -143,7 +143,7 @@ export class Swapper {
   async #updateSequences(tx: DatabaseTransactionConnection): Promise<void> {
     for (const seq of await this.#targetTable.sequences(tx)) {
       await tx.query(
-        sql.type(z.object({}))`
+        sql.typeAlias("void")`
           ALTER SEQUENCE ${sql.identifier([seq.sequenceSchema, seq.sequenceName])}
           OWNED BY ${sql.identifier([this.#table.schema, this.#table.name, seq.relatedColumn])}
         `,

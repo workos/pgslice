@@ -2,10 +2,8 @@ import {
   CommonQueryMethods,
   createPool,
   DatabaseTransactionConnection,
-  sql,
   type DatabasePool,
 } from "slonik";
-import { z } from "zod";
 
 import type {
   AddPartitionsOptions,
@@ -26,7 +24,7 @@ import type {
 import { isPeriod } from "./types.js";
 import { Table, getServerVersionNum } from "./table.js";
 import { DateRanges } from "./date-ranges.js";
-import { formatDateForSql, rawSql } from "./sql-utils.js";
+import { formatDateForSql, rawSql, sql } from "./sql-utils.js";
 import { Mirroring } from "./mirroring.js";
 import { Filler } from "./filler.js";
 import { Synchronizer } from "./synchronizer.js";
@@ -158,7 +156,7 @@ export class Pgslice {
     }
 
     await tx.query(
-      sql.type(z.object({}))`
+      sql.typeAlias("void")`
         CREATE TABLE ${intermediateIdent} (LIKE ${tableIdent}
           INCLUDING ${sql.join(includings, sql.fragment` INCLUDING `)}
         ) PARTITION BY RANGE (${columnIdent})
@@ -171,7 +169,7 @@ export class Pgslice {
       const transformedIndexDef = indexDef
         .replace(/ ON \S+ USING /, ` ON ${intermediate.quoted} USING `)
         .replace(/ INDEX .+ ON /, " INDEX ON ");
-      await tx.query(sql.type(z.object({}))`${rawSql(transformedIndexDef)}`);
+      await tx.query(sql.typeAlias("void")`${rawSql(transformedIndexDef)}`);
     }
 
     // Copy foreign keys
@@ -181,7 +179,7 @@ export class Pgslice {
     const cast = columnInfo.cast ?? "date";
     const comment = `column:${columnInfo.name},period:${period},cast:${cast},version:3`;
     await tx.query(
-      sql.type(z.object({}))`
+      sql.typeAlias("void")`
         COMMENT ON TABLE ${intermediateIdent} IS ${sql.literalValue(comment)}
       `,
     );
@@ -194,7 +192,7 @@ export class Pgslice {
   ): Promise<void> {
     // Create table with all properties
     await tx.query(
-      sql.type(z.object({}))`
+      sql.typeAlias("void")`
         CREATE TABLE ${intermediate.sqlIdentifier} (LIKE ${table.sqlIdentifier} INCLUDING ALL)
       `,
     );
@@ -210,8 +208,8 @@ export class Pgslice {
   ): Promise<void> {
     for (const fkDef of await source.foreignKeys(tx)) {
       await tx.query(
-        sql.type(
-          z.object({}),
+        sql.typeAlias(
+          "void",
         )`ALTER TABLE ${target.sqlIdentifier} ADD ${rawSql(fkDef)}`,
       );
     }
@@ -288,7 +286,7 @@ export class Pgslice {
         createSql = sql.fragment`${createSql} TABLESPACE ${sql.identifier([options.tablespace])}`;
       }
 
-      await tx.query(sql.type(z.object({}))`${createSql}`);
+      await tx.query(sql.typeAlias("void")`${createSql}`);
 
       // Add primary key if the schema table has one
       if (primaryKeyColumns.length > 0) {
@@ -297,7 +295,7 @@ export class Pgslice {
           sql.fragment`, `,
         );
         await tx.query(
-          sql.type(z.object({}))`
+          sql.typeAlias("void")`
             ALTER TABLE ${partitionTable.sqlIdentifier}
             ADD PRIMARY KEY (${pkColumns})
           `,
@@ -440,7 +438,7 @@ export class Pgslice {
     }
 
     await this.connection.query(
-      sql.type(z.object({}))`ANALYZE VERBOSE ${targetTable.sqlIdentifier}`,
+      sql.typeAlias("void")`ANALYZE VERBOSE ${targetTable.sqlIdentifier}`,
     );
 
     return targetTable;
@@ -464,7 +462,7 @@ export class Pgslice {
     }
 
     await tx.query(
-      sql.type(z.object({}))`
+      sql.typeAlias("void")`
         DROP TABLE ${intermediate.sqlIdentifier} CASCADE
       `,
     );

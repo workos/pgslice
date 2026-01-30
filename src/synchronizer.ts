@@ -1,7 +1,8 @@
-import { CommonQueryMethods, sql } from "slonik";
+import { CommonQueryMethods } from "slonik";
 import { z } from "zod";
+
 import { Table } from "./table.js";
-import { valueToSql } from "./sql-utils.js";
+import { sql, valueToSql } from "./sql-utils.js";
 import type {
   ColumnInfo,
   IdValue,
@@ -380,7 +381,7 @@ export class Synchronizer {
     );
 
     await connection.query(
-      sql.type(z.object({}))`
+      sql.typeAlias("void")`
         INSERT INTO ${this.#target.sqlIdentifier} (${columnList})
         VALUES (${valueList})
       `,
@@ -408,7 +409,7 @@ export class Synchronizer {
     const setClause = sql.join(setClauses, sql.fragment`, `);
 
     await connection.query(
-      sql.type(z.object({}))`
+      sql.typeAlias("void")`
         UPDATE ${this.#target.sqlIdentifier}
         SET ${setClause}
         WHERE ${pkCol} = ${pkValue as Parameters<typeof sql.fragment>[1]}
@@ -420,7 +421,7 @@ export class Synchronizer {
     const pkCol = sql.identifier([this.#primaryKeyColumn]);
 
     await connection.query(
-      sql.type(z.object({}))`
+      sql.typeAlias("void")`
         DELETE FROM ${this.#target.sqlIdentifier}
         WHERE ${pkCol} = ${pk}
       `,

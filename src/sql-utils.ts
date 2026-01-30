@@ -1,9 +1,17 @@
 import {
-  sql,
+  createSqlTag,
   type PrimitiveValueExpression,
   type SerializableValue,
 } from "slonik";
+import { z } from "zod";
+
 import type { Cast } from "./types.js";
+
+export const sql = createSqlTag({
+  typeAliases: {
+    void: z.object({}).strict(),
+  },
+});
 
 /**
  * Creates a SQL fragment from a raw string.

@@ -1,7 +1,7 @@
-import { DatabaseTransactionConnection, sql } from "slonik";
-import { z } from "zod";
+import { DatabaseTransactionConnection } from "slonik";
 
 import { Table } from "./table.js";
+import { sql } from "./sql-utils.js";
 
 export type MirroringTargetType = "intermediate" | "retired";
 
@@ -40,17 +40,17 @@ export class Mirroring {
       target,
     );
 
-    await tx.query(sql.type(z.object({}))`${functionSql}`);
-    await tx.query(sql.type(z.object({}))`${this.#dropTriggerSql}`);
-    await tx.query(sql.type(z.object({}))`${this.#createTriggerSql}`);
+    await tx.query(sql.typeAlias("void")`${functionSql}`);
+    await tx.query(sql.typeAlias("void")`${this.#dropTriggerSql}`);
+    await tx.query(sql.typeAlias("void")`${this.#createTriggerSql}`);
   }
 
   /**
    * Disables mirroring by dropping the trigger and function.
    */
   async disable(tx: DatabaseTransactionConnection): Promise<void> {
-    await tx.query(sql.type(z.object({}))`${this.#dropTriggerSql}`);
-    await tx.query(sql.type(z.object({}))`${this.#dropFunctionSql}`);
+    await tx.query(sql.typeAlias("void")`${this.#dropTriggerSql}`);
+    await tx.query(sql.typeAlias("void")`${this.#dropFunctionSql}`);
   }
 
   get #functionName() {
