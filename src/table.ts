@@ -207,10 +207,16 @@ export class Table {
     return new Table(this.schema, `${this.name}_${suffix}`);
   }
 
+  #primaryKey: string[] | null = null;
+
   /**
    * Gets the primary key column names for this table in order.
    */
   async primaryKey(tx: DatabaseTransactionConnection): Promise<string[]> {
+    if (this.#primaryKey) {
+      return this.#primaryKey;
+    }
+
     const primaryKeys = await tx.any(
       sql.type(
         z.object({
@@ -237,17 +243,21 @@ export class Table {
     );
 
     if (primaryKeys.length) {
-      return [...primaryKeys]
+      this.#primaryKey = [...primaryKeys]
         .sort((a, b) => {
           const keys = a.indkey.split(" ");
           return keys.indexOf(a.attnum) - keys.indexOf(b.attnum);
         })
         .map((r) => r.attname);
+
+      return this.#primaryKey;
     }
 
-    return (await this.columns(tx))
+    this.#primaryKey = (await this.columns(tx))
       .map((col) => col.name)
       .filter((name) => Table.primaryKeyFallback.includes(name.toLowerCase()));
+
+    return this.#primaryKey;
   }
 
   /**
@@ -303,19 +313,18 @@ export class Table {
    */
   async maxId(
     tx: CommonQueryMethods,
-    primaryKeyColumn: string,
     options?: { below?: IdValue },
   ): Promise<IdValue | null> {
-    const col = sql.identifier([primaryKeyColumn]);
+    const primaryKeyColumn = sql.identifier(await this.primaryKey(tx));
 
     let whereClause = sql.fragment`1 = 1`;
     if (options?.below !== undefined) {
-      whereClause = sql.fragment`${col} <= ${options.below}`;
+      whereClause = sql.fragment`${primaryKeyColumn} <= ${options.below}`;
     }
 
     const result = await tx.maybeOne(
       sql.type(z.object({ max_id: idValueSchema }))`
-        SELECT MAX(${col}) AS max_id
+        SELECT MAX(${primaryKeyColumn}) AS max_id
         FROM ${this.sqlIdentifier}
         WHERE ${whereClause}
       `,
@@ -333,14 +342,13 @@ export class Table {
    */
   async minId(
     tx: CommonQueryMethods,
-    primaryKeyColumn: string,
     options?: {
       column?: string;
       cast?: Cast;
       startingTime?: Date;
     },
   ): Promise<IdValue | null> {
-    const col = sql.identifier([primaryKeyColumn]);
+    const col = sql.identifier(await this.primaryKey(tx));
 
     let whereClause = sql.fragment`1 = 1`;
     if (options?.column && options.cast && options.startingTime) {

@@ -116,26 +116,26 @@ export class Synchronizer {
     }
 
     let primaryKeyColumn: string;
-    if (options.primaryKey) {
-      primaryKeyColumn = options.primaryKey;
-      if (!sourceColNames.has(primaryKeyColumn)) {
+    const pkColumns = await sourceTable.primaryKey(tx);
+    switch (pkColumns.length) {
+      case 0:
+        throw new Error("Primary key not found in source table.");
+      case 1:
+        primaryKeyColumn = pkColumns[0];
+        break;
+      default:
         throw new Error(
-          `Primary key '${primaryKeyColumn}' not found in source table`,
+          `Composite primary key found (${pkColumns.join(
+            ", ",
+          )}). Not currently supported.`,
         );
-      }
-    } else {
-      const pkColumns = await sourceTable.primaryKey(tx);
-      if (pkColumns.length === 0) {
-        throw new Error("Primary key not found. Specify with --primary-key");
-      }
-      primaryKeyColumn = pkColumns[0];
     }
 
     let startingId: IdValue;
     if (options.start !== undefined) {
       startingId = transformIdValue(options.start);
     } else {
-      const minId = await sourceTable.minId(tx, primaryKeyColumn);
+      const minId = await sourceTable.minId(tx);
       if (minId === null) {
         throw new Error("No rows found in source table");
       }

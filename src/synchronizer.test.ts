@@ -86,7 +86,7 @@ describe("Synchronizer", () => {
       expect(error.message).toBe("No rows found in source table");
     });
 
-    test("throws when primary key not found and not specified", async ({
+    test("throws when primary key not found in source table", async ({
       transaction,
     }) => {
       // Create tables without primary key and without `id` column (fallback)
@@ -104,32 +104,7 @@ describe("Synchronizer", () => {
         table: "posts",
       }).catch((e) => e);
 
-      expect(error.message).toBe(
-        "Primary key not found. Specify with --primary-key",
-      );
-    });
-
-    test("throws when specified primary key not found in source", async ({
-      transaction,
-    }) => {
-      await transaction.query(sql.unsafe`
-        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
-      `);
-      await transaction.query(sql.unsafe`
-        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
-      `);
-      await transaction.query(sql.unsafe`
-        INSERT INTO posts (name) VALUES ('test')
-      `);
-
-      const error = await Synchronizer.init(transaction, {
-        table: "posts",
-        primaryKey: "nonexistent_column",
-      }).catch((e) => e);
-
-      expect(error.message).toBe(
-        "Primary key 'nonexistent_column' not found in source table",
-      );
+      expect(error.message).toBe("Primary key not found in source table.");
     });
   });
 

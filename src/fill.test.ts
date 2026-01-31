@@ -378,6 +378,6 @@ describe("Pgslice.fill", () => {
       }
     })().catch((e) => e);
 
-    expect(error.message).toBe("No primary key");
+    expect(error.message).toBe("Primary key not found in source table.");
   });
 });

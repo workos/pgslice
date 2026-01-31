@@ -138,11 +138,21 @@ export class Filler {
     }
 
     // Get primary key
-    const primaryKeyColumns = await schemaTable.primaryKey(tx);
-    if (primaryKeyColumns.length === 0) {
-      throw new Error("No primary key");
+    let primaryKeyColumn: string;
+    const pkColumns = await schemaTable.primaryKey(tx);
+    switch (pkColumns.length) {
+      case 0:
+        throw new Error("Primary key not found in source table.");
+      case 1:
+        primaryKeyColumn = pkColumns[0];
+        break;
+      default:
+        throw new Error(
+          `Composite primary key found (${pkColumns.join(
+            ", ",
+          )}). Not currently supported.`,
+        );
     }
-    const primaryKeyColumn = primaryKeyColumns[0];
 
     // Get columns from source table (just names - Filler uses INSERT...SELECT which preserves types)
     const columns = (await sourceTable.columns(tx)).map((c) => c.name);
@@ -160,14 +170,14 @@ export class Filler {
         : options.start;
     } else if (options.swapped) {
       // Get max from dest - resume from where we left off (exclusive)
-      const maxSourceId = await sourceTable.maxId(tx, primaryKeyColumn);
-      const destMaxId = await destTable.maxId(tx, primaryKeyColumn, {
+      const maxSourceId = await sourceTable.maxId(tx);
+      const destMaxId = await destTable.maxId(tx, {
         below: maxSourceId ?? undefined,
       });
       startingId = destMaxId ?? undefined;
     } else {
       // Get max from dest - resume from where we left off (exclusive)
-      const destMaxId = await destTable.maxId(tx, primaryKeyColumn);
+      const destMaxId = await destTable.maxId(tx);
       startingId = destMaxId ?? undefined;
     }
 

@@ -126,7 +126,6 @@ export interface FillBatchResult {
  */
 export interface SynchronizeOptions {
   table: string;
-  primaryKey?: string;
   start?: string;
   windowSize?: number;
   dryRun?: boolean;

@@ -41,10 +41,6 @@ export class SynchronizeCommand extends BaseCommand {
 
   table = Option.String({ required: true, name: "table" });
 
-  primaryKey = Option.String("--primary-key", {
-    description: "Primary key column name",
-  });
-
   start = Option.String("--start", {
     description: "Primary key value to start synchronization at",
   });
@@ -81,7 +77,6 @@ export class SynchronizeCommand extends BaseCommand {
 
     for await (const batch of pgslice.synchronize({
       table: this.table,
-      primaryKey: this.primaryKey,
       start: this.start,
       windowSize: this.windowSize,
       dryRun: this.dryRun,

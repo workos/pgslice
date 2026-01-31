@@ -14,7 +14,7 @@ describe("Table.maxId", () => {
     `);
 
     const table = Table.parse("test_table");
-    const maxId = await table.maxId(transaction, "id");
+    const maxId = await table.maxId(transaction);
 
     expect(maxId).toBe(3n);
   });
@@ -25,7 +25,7 @@ describe("Table.maxId", () => {
     `);
 
     const table = Table.parse("test_table");
-    const maxId = await table.maxId(transaction, "id");
+    const maxId = await table.maxId(transaction);
 
     expect(maxId).toBeNull();
   });
@@ -44,7 +44,7 @@ describe("Table.maxId", () => {
     `);
 
     const table = Table.parse("test_table");
-    const maxId = await table.maxId(transaction, "id");
+    const maxId = await table.maxId(transaction);
 
     expect(maxId).toBe("01ARZ3NDEKTSV4RRFFQ69G5FAV");
   });
@@ -58,7 +58,7 @@ describe("Table.maxId", () => {
     `);
 
     const table = Table.parse("test_table");
-    const maxId = await table.maxId(transaction, "id", { below: 3n });
+    const maxId = await table.maxId(transaction, { below: 3n });
 
     expect(maxId).toBe(3n);
   });
@@ -75,7 +75,7 @@ describe("Table.maxId", () => {
     `);
 
     const table = Table.parse("test_table");
-    const maxId = await table.maxId(transaction, "id", {
+    const maxId = await table.maxId(transaction, {
       below: "01ARZ3NDEKTSV4RRFFQ69G5FAM",
     });
 
@@ -93,7 +93,7 @@ describe("Table.minId", () => {
     `);
 
     const table = Table.parse("test_table");
-    const minId = await table.minId(transaction, "id");
+    const minId = await table.minId(transaction);
 
     expect(minId).toBe(1n);
   });
@@ -104,7 +104,7 @@ describe("Table.minId", () => {
     `);
 
     const table = Table.parse("test_table");
-    const minId = await table.minId(transaction, "id");
+    const minId = await table.minId(transaction);
 
     expect(minId).toBeNull();
   });
@@ -123,7 +123,7 @@ describe("Table.minId", () => {
     `);
 
     const table = Table.parse("test_table");
-    const minId = await table.minId(transaction, "id");
+    const minId = await table.minId(transaction);
 
     expect(minId).toBe("01ARZ3NDEKTSV4RRFFQ69G5FAA");
   });
@@ -144,7 +144,7 @@ describe("Table.minId", () => {
     `);
 
     const table = Table.parse("test_table");
-    const minId = await table.minId(transaction, "id", {
+    const minId = await table.minId(transaction, {
       column: "created_at",
       cast: "date",
       startingTime: new Date("2024-06-01"),
