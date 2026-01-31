@@ -118,8 +118,7 @@ export class Mirroring {
     primaryKeyColumn: string,
     target: Table,
   ) {
-    const whereColumns = [primaryKeyColumn];
-    const whereClause = this.#buildWhereClause(whereColumns);
+    const whereClause = this.#buildWhereClause([primaryKeyColumn]);
     const setClause = this.#buildSetClause(columns);
     const columnList = this.#buildColumnList(columns);
     const newTupleList = this.#buildNewTupleList(columns);
