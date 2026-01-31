@@ -137,22 +137,7 @@ export class Filler {
       schemaTable = table;
     }
 
-    // Get primary key
-    let primaryKeyColumn: string;
-    const pkColumns = await schemaTable.primaryKey(tx);
-    switch (pkColumns.length) {
-      case 0:
-        throw new Error("Primary key not found in source table.");
-      case 1:
-        primaryKeyColumn = pkColumns[0];
-        break;
-      default:
-        throw new Error(
-          `Composite primary key found (${pkColumns.join(
-            ", ",
-          )}). Not currently supported.`,
-        );
-    }
+    const primaryKeyColumn = await schemaTable.primaryKey(tx);
 
     // Get columns from source table (just names - Filler uses INSERT...SELECT which preserves types)
     const columns = (await sourceTable.columns(tx)).map((c) => c.name);

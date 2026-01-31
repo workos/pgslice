@@ -257,7 +257,7 @@ export class Pgslice {
           : originalTable;
     }
 
-    const primaryKeyColumns = await schemaTable.primaryKey(tx);
+    const primaryKeyColumn = await schemaTable.primaryKey(tx);
 
     const dateRanges = new DateRanges({
       period: settings.period,
@@ -288,19 +288,12 @@ export class Pgslice {
 
       await tx.query(sql.typeAlias("void")`${createSql}`);
 
-      // Add primary key if the schema table has one
-      if (primaryKeyColumns.length > 0) {
-        const pkColumns = sql.join(
-          primaryKeyColumns.map((col) => sql.identifier([col])),
-          sql.fragment`, `,
-        );
-        await tx.query(
-          sql.typeAlias("void")`
-            ALTER TABLE ${partitionTable.sqlIdentifier}
-            ADD PRIMARY KEY (${pkColumns})
-          `,
-        );
-      }
+      await tx.query(
+        sql.typeAlias("void")`
+          ALTER TABLE ${partitionTable.sqlIdentifier}
+          ADD PRIMARY KEY (${sql.identifier([primaryKeyColumn])})
+        `,
+      );
     }
   }
 

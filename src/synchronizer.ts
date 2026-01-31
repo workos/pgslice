@@ -115,21 +115,7 @@ export class Synchronizer {
       }
     }
 
-    let primaryKeyColumn: string;
-    const pkColumns = await sourceTable.primaryKey(tx);
-    switch (pkColumns.length) {
-      case 0:
-        throw new Error("Primary key not found in source table.");
-      case 1:
-        primaryKeyColumn = pkColumns[0];
-        break;
-      default:
-        throw new Error(
-          `Composite primary key found (${pkColumns.join(
-            ", ",
-          )}). Not currently supported.`,
-        );
-    }
+    const primaryKeyColumn = await sourceTable.primaryKey(tx);
 
     let startingId: IdValue;
     if (options.start !== undefined) {

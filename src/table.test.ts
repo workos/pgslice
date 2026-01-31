@@ -330,25 +330,7 @@ describe("Table.primaryKey", () => {
     const table = Table.parse("test_table");
     const primaryKey = await table.primaryKey(transaction);
 
-    expect(primaryKey).toEqual(["id"]);
-  });
-
-  test("returns composite primary key in correct order", async ({
-    transaction,
-  }) => {
-    await transaction.query(sql.unsafe`
-      CREATE TABLE test_table (
-        tenant_id BIGINT NOT NULL,
-        id BIGINT NOT NULL,
-        name TEXT,
-        PRIMARY KEY (tenant_id, id)
-      )
-    `);
-
-    const table = Table.parse("test_table");
-    const primaryKey = await table.primaryKey(transaction);
-
-    expect(primaryKey).toEqual(["tenant_id", "id"]);
+    expect(primaryKey).toEqual("id");
   });
 
   test("falls back to id column when no primary key constraint exists", async ({
@@ -361,10 +343,10 @@ describe("Table.primaryKey", () => {
     const table = Table.parse("test_table");
     const primaryKey = await table.primaryKey(transaction);
 
-    expect(primaryKey).toEqual(["id"]);
+    expect(primaryKey).toEqual("id");
   });
 
-  test("returns empty array when no primary key and no fallback columns", async ({
+  test("throws an error wheh nno primary key and no fallback columns", async ({
     transaction,
   }) => {
     await transaction.query(sql.unsafe`
@@ -372,9 +354,10 @@ describe("Table.primaryKey", () => {
     `);
 
     const table = Table.parse("test_table");
-    const primaryKey = await table.primaryKey(transaction);
 
-    expect(primaryKey).toEqual([]);
+    await expect(table.primaryKey(transaction)).rejects.toThrow(
+      'Primary key not found in "public.test_table".',
+    );
   });
 
   test("fallback respects primaryKeyFallback static property", async ({
@@ -392,7 +375,7 @@ describe("Table.primaryKey", () => {
       const table = Table.parse("test_table");
       const primaryKey = await table.primaryKey(transaction);
 
-      expect(primaryKey).toEqual(["user_id"]);
+      expect(primaryKey).toEqual("user_id");
     } finally {
       Table.primaryKeyFallback = originalFallback;
     }
@@ -407,6 +390,6 @@ describe("Table.primaryKey", () => {
     const table = Table.parse("test_table");
     const primaryKey = await table.primaryKey(transaction);
 
-    expect(primaryKey).toEqual(["Id"]);
+    expect(primaryKey).toEqual("Id");
   });
 });

@@ -104,7 +104,7 @@ describe("Synchronizer", () => {
         table: "posts",
       }).catch((e) => e);
 
-      expect(error.message).toBe("Primary key not found in source table.");
+      expect(error.message).toBe('Primary key not found in "public.posts".');
     });
   });
 

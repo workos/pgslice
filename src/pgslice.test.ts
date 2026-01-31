@@ -609,44 +609,6 @@ describe("Pgslice.addPartitions", () => {
     });
   });
 
-  describe("composite primary keys", () => {
-    test("handles composite primary keys", async ({ pgslice, transaction }) => {
-      await transaction.query(sql.unsafe`
-        CREATE TABLE events (
-          tenant_id INTEGER NOT NULL,
-          id INTEGER NOT NULL,
-          occurred_at DATE NOT NULL,
-          PRIMARY KEY (tenant_id, id)
-        )
-      `);
-
-      await pgslice.prep(transaction, {
-        table: "events",
-        column: "occurred_at",
-        period: "month",
-        partition: true,
-      });
-
-      await pgslice.addPartitions(transaction, {
-        table: "events",
-        intermediate: true,
-        future: 0,
-      });
-
-      const pkColumns = await transaction.any(
-        sql.type(z.object({ attname: z.string() }))`
-          SELECT a.attname
-          FROM pg_constraint c
-          JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
-          WHERE c.conrelid = 'public.events_202601'::regclass AND c.contype = 'p'
-          ORDER BY array_position(c.conkey, a.attnum)
-        `,
-      );
-
-      expect(pkColumns.map((c) => c.attname)).toEqual(["tenant_id", "id"]);
-    });
-  });
-
   describe("error handling", () => {
     test("throws when table not found", async ({ pgslice, transaction }) => {
       await expect(

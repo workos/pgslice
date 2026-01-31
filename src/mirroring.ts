@@ -103,36 +103,28 @@ export class Mirroring {
     );
   }
 
-  #buildConflictClause(columns: string[], primaryKeyColumns: string[]) {
+  #buildConflictClause(columns: string[], primaryKeyColumn: string) {
     if (this.#targetType === "intermediate") {
       return sql.fragment``;
     }
 
-    if (primaryKeyColumns.length > 0) {
-      const conflictTarget = this.#buildColumnList(primaryKeyColumns);
-      const setClause = this.#buildSetClause(columns);
-      return sql.fragment` ON CONFLICT (${conflictTarget}) DO UPDATE SET ${setClause}`;
-    }
-
-    return sql.fragment` ON CONFLICT DO NOTHING`;
+    const conflictTarget = this.#buildColumnList([primaryKeyColumn]);
+    const setClause = this.#buildSetClause(columns);
+    return sql.fragment` ON CONFLICT (${conflictTarget}) DO UPDATE SET ${setClause}`;
   }
 
   #buildFunctionSql(
     columns: string[],
-    primaryKeyColumns: string[],
+    primaryKeyColumn: string,
     target: Table,
   ) {
-    const whereColumns =
-      primaryKeyColumns.length > 0 ? primaryKeyColumns : columns;
+    const whereColumns = [primaryKeyColumn];
     const whereClause = this.#buildWhereClause(whereColumns);
     const setClause = this.#buildSetClause(columns);
     const columnList = this.#buildColumnList(columns);
     const newTupleList = this.#buildNewTupleList(columns);
     const targetTable = target.sqlIdentifier;
-    const conflictClause = this.#buildConflictClause(
-      columns,
-      primaryKeyColumns,
-    );
+    const conflictClause = this.#buildConflictClause(columns, primaryKeyColumn);
 
     return sql.fragment`
       CREATE OR REPLACE FUNCTION ${this.#functionName}()

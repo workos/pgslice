@@ -207,17 +207,17 @@ export class Table {
     return new Table(this.schema, `${this.name}_${suffix}`);
   }
 
-  #primaryKey: string[] | null = null;
+  #primaryKey: string | null = null;
 
   /**
    * Gets the primary key column names for this table in order.
    */
-  async primaryKey(tx: DatabaseTransactionConnection): Promise<string[]> {
+  async primaryKey(tx: DatabaseTransactionConnection): Promise<string> {
     if (this.#primaryKey) {
       return this.#primaryKey;
     }
 
-    const primaryKeys = await tx.any(
+    const explicitPrimaryKeys = await tx.any(
       sql.type(
         z.object({
           attname: z.string(),
@@ -242,22 +242,30 @@ export class Table {
       `,
     );
 
-    if (primaryKeys.length) {
-      this.#primaryKey = [...primaryKeys]
-        .sort((a, b) => {
-          const keys = a.indkey.split(" ");
-          return keys.indexOf(a.attnum) - keys.indexOf(b.attnum);
-        })
-        .map((r) => r.attname);
-
-      return this.#primaryKey;
+    switch (explicitPrimaryKeys.length) {
+      case 0:
+        break; // No explicit primary key found
+      case 1:
+        this.#primaryKey = explicitPrimaryKeys[0].attname;
+        return this.#primaryKey;
+      default:
+        throw new Error(
+          `Composite primary key found (${explicitPrimaryKeys
+            .map((pk) => pk.attname)
+            .join(", ")}). Not currently supported.`,
+        );
     }
 
-    this.#primaryKey = (await this.columns(tx))
+    const implicitPrimaryKeys = (await this.columns(tx))
       .map((col) => col.name)
       .filter((name) => Table.primaryKeyFallback.includes(name.toLowerCase()));
 
-    return this.#primaryKey;
+    if (implicitPrimaryKeys.length === 1) {
+      this.#primaryKey = implicitPrimaryKeys[0];
+      return this.#primaryKey;
+    }
+
+    throw new Error(`Primary key not found in "${this.toString()}".`);
   }
 
   /**
@@ -315,7 +323,7 @@ export class Table {
     tx: CommonQueryMethods,
     options?: { below?: IdValue },
   ): Promise<IdValue | null> {
-    const primaryKeyColumn = sql.identifier(await this.primaryKey(tx));
+    const primaryKeyColumn = sql.identifier([await this.primaryKey(tx)]);
 
     let whereClause = sql.fragment`1 = 1`;
     if (options?.below !== undefined) {
@@ -348,7 +356,7 @@ export class Table {
       startingTime?: Date;
     },
   ): Promise<IdValue | null> {
-    const col = sql.identifier(await this.primaryKey(tx));
+    const col = sql.identifier([await this.primaryKey(tx)]);
 
     let whereClause = sql.fragment`1 = 1`;
     if (options?.column && options.cast && options.startingTime) {
