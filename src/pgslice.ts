@@ -50,7 +50,13 @@ export class Pgslice {
     databaseUrl: URL,
     options: PgsliceOptions = {},
   ): Promise<Pgslice> {
-    const connection = await createPool(databaseUrl.toString(), {
+    const url = new URL(databaseUrl.toString());
+
+    if (!url.searchParams.has("application_name")) {
+      url.searchParams.set("application_name", "pgslice");
+    }
+
+    const connection = await createPool(url.toString(), {
       // We don't want to perform any operations in parallel, and should
       // only ever need a single connection at a time.
       maximumPoolSize: 1,
