@@ -50,7 +50,9 @@ export class Pgslice {
     databaseUrl: URL,
     options: PgsliceOptions = {},
   ): Promise<Pgslice> {
-    const connection = await createPool(databaseUrl.toString());
+    const connection = await createPool(databaseUrl.toString(), {
+      maximumPoolSize: 1,
+    });
     const instance = new Pgslice(connection, options);
     return instance;
   }
