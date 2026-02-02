@@ -51,7 +51,12 @@ export class Pgslice {
     options: PgsliceOptions = {},
   ): Promise<Pgslice> {
     const connection = await createPool(databaseUrl.toString(), {
+      // We don't want to perform any operations in parallel, and should
+      // only ever need a single connection at a time.
       maximumPoolSize: 1,
+
+      // Never retry queries.
+      queryRetryLimit: 0,
     });
     const instance = new Pgslice(connection, options);
     return instance;
