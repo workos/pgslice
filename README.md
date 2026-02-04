@@ -2,21 +2,25 @@
 
 Postgres partitioning as easy as pie. Works great for both new and existing tables, with zero downtime and minimal app changes. No need to install anything on your database server. Archive older data on a rolling basis to keep your database size under control.
 
-:tangerine: Battle-tested at [Instacart](https://www.instacart.com/opensource)
-
-[![Build Status](https://github.com/ankane/pgslice/actions/workflows/build.yml/badge.svg)](https://github.com/ankane/pgslice/actions)
+**Note:** This is a TypeScript port of the [original Ruby-based pgslice](https://github.com/ankane/pgslice).
 
 ## Install
 
-pgslice is a command line tool. To install, run:
+pgslice is a command line tool. Requires Node.js 20+.
+
+To install globally:
 
 ```sh
-gem install pgslice
+npm install -g pgslice
 ```
 
-This will give you the `pgslice` command. If installation fails, you may need to install [dependencies](#dependencies).
+Or run directly with npx:
 
-You can also install it with [Homebrew](#homebrew) or [Docker](#docker).
+```sh
+npx pgslice <command>
+```
+
+This will give you the `pgslice` command.
 
 ## Global Options
 
@@ -48,7 +52,6 @@ This creates a partitioned table named `<table>_intermediate` using range partit
 Options:
 
 - `--no-partition`: Create a non-partitioned intermediate table (useful for one-off tasks)
-- `--trigger-based`: Use trigger-based partitioning (for PostgreSQL 9.x)
 
 4. Add partitions to the intermediate table
 
@@ -383,22 +386,6 @@ For this to be effective, ensure `constraint_exclusion` is set to `partition` (t
 SHOW constraint_exclusion;
 ```
 
-## Frameworks
-
-### Rails
-
-Specify the primary key for partitioned models to ensure it’s returned.
-
-```ruby
-class Visit < ApplicationRecord
-  self.primary_key = "id"
-end
-```
-
-### Other Frameworks
-
-Please submit a PR if additional configuration is needed.
-
 ## One Off Tasks
 
 You can also use pgslice to reduce the size of a table without partitioning by creating a new table, filling it with a subset of records, and swapping it in.
@@ -418,103 +405,6 @@ Triggers aren’t copied from the original table. You can set up triggers on the
 ## Data Protection
 
 Always make sure your [connection is secure](https://ankane.org/postgres-sslmode-explained) when connecting to a database over a network you don’t fully trust. Your best option is to connect over SSH or a VPN. Another option is to use `sslmode=verify-full`. If you don’t do this, your database credentials can be compromised.
-
-## Additional Installation Methods
-
-### Homebrew
-
-With Homebrew, you can use:
-
-```sh
-brew install pgslice
-```
-
-### Docker
-
-Get the [Docker image](https://hub.docker.com/r/ankane/pgslice) with:
-
-```sh
-docker pull ankane/pgslice
-alias pgslice="docker run --rm -e PGSLICE_URL ankane/pgslice"
-```
-
-This will give you the `pgslice` command.
-
-## Dependencies
-
-If installation fails, your system may be missing Ruby or libpq.
-
-On Mac, run:
-
-```sh
-brew install libpq
-```
-
-On Ubuntu, run:
-
-```sh
-sudo apt-get install ruby-dev libpq-dev build-essential
-```
-
-## Upgrading
-
-Run:
-
-```sh
-gem install pgslice
-```
-
-To use master, run:
-
-```sh
-gem install specific_install
-gem specific_install https://github.com/ankane/pgslice.git
-```
-
-## Creating Releases
-
-Releases are automatically created when a version tag is pushed to the repository. The release workflow builds the gem and attaches it to a GitHub release.
-
-### Steps to Create a Release
-
-1. Create a new branch with name `v0.7.1.workos3`
-
-2. Update the version in `lib/pgslice/version.rb`:
-
-   ```ruby
-   VERSION = "0.7.1.workos3"
-   ```
-
-3. Commit and push the version change:
-
-   ```sh
-   git add lib/pgslice/version.rb
-   git commit -m "Bump version to v0.7.1.workos3"
-   git push
-   ```
-
-4. Start a PR, get it reviewed and merged:
-   ![Pull Request Example](docs/pr.png)
-   ![Commit Example](docs/commit.png)
-
-5. Create a release through github UI:
-
-![Draft a new release](docs/draft-release.png)
-
-6. Choose to create a new tag
-
-![Create a new tag](docs/new-tag.png)
-![Create new tag on publish](docs/new-tag-publish.png)
-
-7. Make sure to match version number with tag and hit generate release notes
-
-![Prepare release notes](docs/release-notes.png)
-
-8. Publish
-
-![Prepare release notes](docs/publish.png)
-
-The release workflow is configured in `.github/workflows/release.yml`.
 
 ## Reference
 
@@ -546,16 +436,22 @@ To get started with development:
 ```sh
 git clone https://github.com/ankane/pgslice.git
 cd pgslice
-bundle install
-createdb pgslice_test
-bundle exec rake test
+npm install
+npm run build
+npm test
+```
+
+To format code:
+
+```sh
+npm run format
 ```
 
 To test against different versions of Postgres with Docker, use:
 
 ```sh
 docker run -p=8000:5432 postgres:16
-TZ=Etc/UTC PGSLICE_URL=postgres://postgres@localhost:8000/postgres bundle exec rake
+PGSLICE_URL=postgres://postgres@localhost:8000/postgres npm test
 ```
 
 On Mac, you must use [Docker Desktop](https://www.docker.com/products/docker-desktop/) for the port mapping to localhost to work.
