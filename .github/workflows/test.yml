@@ -1,4 +1,4 @@
-name: test-matrix
+name: test
 on:
   push:
     branches:
@@ -14,33 +14,23 @@ run-name: Test ${{ github.event.pull_request.number || github.ref }}
 jobs:
   test:
     runs-on: ubuntu-latest
-    name: Unit tests on Ruby:${{ matrix.ruby }} Postgres:${{ matrix.postgres }}
+    name: Test on Postgres ${{ matrix.postgres }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - ruby: 3.4
-            postgres: 18
-          - ruby: 3.4
-            postgres: 17
-          - ruby: 3.4
-            postgres: 13
-          - ruby: 3.3
-            postgres: 16
-          - ruby: 3.2
-            postgres: 15
-          - ruby: 3.1
-            postgres: 14
-          - ruby: 3.0
-            postgres: 13
+        postgres: [13, 15, 17, 18]
     steps:
       - uses: actions/checkout@v4
-      - uses: ruby/setup-ruby@v1
+      - uses: actions/setup-node@v4
         with:
-          ruby-version: ${{ matrix.ruby }}
-          bundler-cache: true
+          node-version: 20
+          cache: npm
       - uses: ankane/setup-postgres@v1
         with:
           postgres-version: ${{ matrix.postgres }}
           database: pgslice_test
-      - run: bundle exec rake test
+      - run: npm ci
+      - run: npm run build
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm test -- run
