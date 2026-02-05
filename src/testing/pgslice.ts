@@ -35,7 +35,9 @@ export const pgsliceTest = baseTest.extend<{
   },
 
   pgslice: async ({ transaction }, use) => {
-    const pgslice = new Pgslice(transaction, {});
+    const pgslice = new Pgslice(transaction, {
+      advisoryLocks: false,
+    });
 
     await use(pgslice);
 

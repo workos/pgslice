@@ -29,20 +29,24 @@ import { Mirroring } from "./mirroring.js";
 import { Filler } from "./filler.js";
 import { Synchronizer } from "./synchronizer.js";
 import { Swapper } from "./swapper.js";
+import { AdvisoryLock } from "./advisory-lock.js";
 
 interface PgsliceOptions {
   dryRun?: boolean;
+  advisoryLocks?: boolean;
 }
 
 export class Pgslice {
   #connection: DatabasePool | CommonQueryMethods | null = null;
   #dryRun: boolean;
+  #advisoryLocks: boolean;
 
   constructor(
     connection: DatabasePool | CommonQueryMethods,
     options: PgsliceOptions,
   ) {
     this.#dryRun = options.dryRun ?? false;
+    this.#advisoryLocks = options.advisoryLocks ?? true;
     this.#connection = connection;
   }
 
@@ -86,6 +90,32 @@ export class Pgslice {
     return this.connection.transaction(handler, 0);
   }
 
+  async #withLock<T>(
+    table: string,
+    operation: string,
+    handler: () => Promise<T>,
+  ): Promise<T> {
+    if (!this.#advisoryLocks) {
+      return handler();
+    }
+    return AdvisoryLock.withLock(
+      this.connection,
+      Table.parse(table),
+      operation,
+      handler,
+    );
+  }
+
+  async #acquireLock(
+    table: string,
+    operation: string,
+  ): Promise<() => Promise<void>> {
+    if (!this.#advisoryLocks) {
+      return async () => {};
+    }
+    return AdvisoryLock.acquire(this.connection, Table.parse(table), operation);
+  }
+
   async close(): Promise<void> {
     if (this.#connection) {
       if ("end" in this.#connection) {
@@ -106,38 +136,44 @@ export class Pgslice {
     tx: DatabaseTransactionConnection,
     options: PrepOptions,
   ): Promise<void> {
-    const table = Table.parse(options.table);
-    const intermediate = table.intermediate;
+    return this.#withLock(options.table, "prep", async () => {
+      const table = Table.parse(options.table);
+      const intermediate = table.intermediate;
 
-    if (!(await table.exists(tx))) {
-      throw new Error(`Table not found: ${table.toString()}`);
-    }
-
-    if (await intermediate.exists(tx)) {
-      throw new Error(`Table already exists: ${intermediate.toString()}`);
-    }
-
-    if (options.partition) {
-      const columns = await table.columns(tx);
-      const columnInfo = columns.find((c) => c.name === options.column);
-      if (!columnInfo) {
-        throw new Error(`Column not found: ${options.column}`);
+      if (!(await table.exists(tx))) {
+        throw new Error(`Table not found: ${table.toString()}`);
       }
 
-      if (!isPeriod(options.period)) {
-        throw new Error(`Invalid period: ${options.period}`);
+      if (await intermediate.exists(tx)) {
+        throw new Error(`Table already exists: ${intermediate.toString()}`);
       }
 
-      await this.#createPartitionedIntermediateTable(
-        tx,
-        table,
-        intermediate,
-        columnInfo,
-        options.period,
-      );
-    } else {
-      await this.#createUnpartitionedIntermediateTable(tx, table, intermediate);
-    }
+      if (options.partition) {
+        const columns = await table.columns(tx);
+        const columnInfo = columns.find((c) => c.name === options.column);
+        if (!columnInfo) {
+          throw new Error(`Column not found: ${options.column}`);
+        }
+
+        if (!isPeriod(options.period)) {
+          throw new Error(`Invalid period: ${options.period}`);
+        }
+
+        await this.#createPartitionedIntermediateTable(
+          tx,
+          table,
+          intermediate,
+          columnInfo,
+          options.period,
+        );
+      } else {
+        await this.#createUnpartitionedIntermediateTable(
+          tx,
+          table,
+          intermediate,
+        );
+      }
+    });
   }
 
   async #createPartitionedIntermediateTable(
@@ -235,79 +271,81 @@ export class Pgslice {
     tx: DatabaseTransactionConnection,
     options: AddPartitionsOptions,
   ): Promise<void> {
-    const originalTable = Table.parse(options.table);
-    const targetTable = options.intermediate
-      ? originalTable.intermediate
-      : originalTable;
+    return this.#withLock(options.table, "add_partitions", async () => {
+      const originalTable = Table.parse(options.table);
+      const targetTable = options.intermediate
+        ? originalTable.intermediate
+        : originalTable;
 
-    if (!(await targetTable.exists(tx))) {
-      throw new Error(`Table not found: ${targetTable.toString()}`);
-    }
-
-    const settings = await targetTable.fetchSettings(tx);
-    if (!settings) {
-      let message = `No settings found: ${targetTable.toString()}`;
-      if (!options.intermediate) {
-        message += "\nDid you mean to use --intermediate?";
+      if (!(await targetTable.exists(tx))) {
+        throw new Error(`Table not found: ${targetTable.toString()}`);
       }
-      throw new Error(message);
-    }
 
-    const past = options.past ?? 0;
-    const future = options.future ?? 0;
+      const settings = await targetTable.fetchSettings(tx);
+      if (!settings) {
+        let message = `No settings found: ${targetTable.toString()}`;
+        if (!options.intermediate) {
+          message += "\nDid you mean to use --intermediate?";
+        }
+        throw new Error(message);
+      }
 
-    // Determine which table to get the primary key from.
-    // For intermediate tables, use the original table.
-    // For swapped tables, use the last existing partition (if any) or the original.
-    let schemaTable: Table;
-    if (options.intermediate) {
-      schemaTable = originalTable;
-    } else {
-      const existingPartitions = await targetTable.partitions(tx);
-      schemaTable =
-        existingPartitions.length > 0
-          ? existingPartitions[existingPartitions.length - 1]
-          : originalTable;
-    }
+      const past = options.past ?? 0;
+      const future = options.future ?? 0;
 
-    const primaryKeyColumn = await schemaTable.primaryKey(tx);
+      // Determine which table to get the primary key from.
+      // For intermediate tables, use the original table.
+      // For swapped tables, use the last existing partition (if any) or the original.
+      let schemaTable: Table;
+      if (options.intermediate) {
+        schemaTable = originalTable;
+      } else {
+        const existingPartitions = await targetTable.partitions(tx);
+        schemaTable =
+          existingPartitions.length > 0
+            ? existingPartitions[existingPartitions.length - 1]
+            : originalTable;
+      }
 
-    const dateRanges = new DateRanges({
-      period: settings.period,
-      past,
-      future,
+      const primaryKeyColumn = await schemaTable.primaryKey(tx);
+
+      const dateRanges = new DateRanges({
+        period: settings.period,
+        past,
+        future,
+      });
+
+      for (const range of dateRanges) {
+        const partitionTable = originalTable.partition(range.suffix);
+
+        if (await partitionTable.exists(tx)) {
+          continue;
+        }
+
+        const startDate = formatDateForSql(range.start, settings.cast);
+        const endDate = formatDateForSql(range.end, settings.cast);
+
+        // Build the CREATE TABLE statement
+        let createSql = sql.fragment`
+          CREATE TABLE ${partitionTable.sqlIdentifier}
+          PARTITION OF ${targetTable.sqlIdentifier}
+          FOR VALUES FROM (${startDate}) TO (${endDate})
+        `;
+
+        if (options.tablespace) {
+          createSql = sql.fragment`${createSql} TABLESPACE ${sql.identifier([options.tablespace])}`;
+        }
+
+        await tx.query(sql.typeAlias("void")`${createSql}`);
+
+        await tx.query(
+          sql.typeAlias("void")`
+            ALTER TABLE ${partitionTable.sqlIdentifier}
+            ADD PRIMARY KEY (${sql.identifier([primaryKeyColumn])})
+          `,
+        );
+      }
     });
-
-    for (const range of dateRanges) {
-      const partitionTable = originalTable.partition(range.suffix);
-
-      if (await partitionTable.exists(tx)) {
-        continue;
-      }
-
-      const startDate = formatDateForSql(range.start, settings.cast);
-      const endDate = formatDateForSql(range.end, settings.cast);
-
-      // Build the CREATE TABLE statement
-      let createSql = sql.fragment`
-        CREATE TABLE ${partitionTable.sqlIdentifier}
-        PARTITION OF ${targetTable.sqlIdentifier}
-        FOR VALUES FROM (${startDate}) TO (${endDate})
-      `;
-
-      if (options.tablespace) {
-        createSql = sql.fragment`${createSql} TABLESPACE ${sql.identifier([options.tablespace])}`;
-      }
-
-      await tx.query(sql.typeAlias("void")`${createSql}`);
-
-      await tx.query(
-        sql.typeAlias("void")`
-          ALTER TABLE ${partitionTable.sqlIdentifier}
-          ADD PRIMARY KEY (${sql.identifier([primaryKeyColumn])})
-        `,
-      );
-    }
   }
 
   /**
@@ -319,18 +357,20 @@ export class Pgslice {
     tx: DatabaseTransactionConnection,
     options: EnableMirroringOptions,
   ): Promise<void> {
-    const table = Table.parse(options.table);
-    const targetType = options.targetType ?? "intermediate";
-    const target = table[targetType];
+    return this.#withLock(options.table, "enable_mirroring", async () => {
+      const table = Table.parse(options.table);
+      const targetType = options.targetType ?? "intermediate";
+      const target = table[targetType];
 
-    if (!(await table.exists(tx))) {
-      throw new Error(`Table not found: ${table.toString()}`);
-    }
-    if (!(await target.exists(tx))) {
-      throw new Error(`Table not found: ${target.toString()}`);
-    }
+      if (!(await table.exists(tx))) {
+        throw new Error(`Table not found: ${table.toString()}`);
+      }
+      if (!(await target.exists(tx))) {
+        throw new Error(`Table not found: ${target.toString()}`);
+      }
 
-    await new Mirroring({ source: table, targetType }).enable(tx, target);
+      await new Mirroring({ source: table, targetType }).enable(tx, target);
+    });
   }
 
   /**
@@ -341,14 +381,16 @@ export class Pgslice {
     tx: DatabaseTransactionConnection,
     options: DisableMirroringOptions,
   ): Promise<void> {
-    const table = Table.parse(options.table);
-    const targetType = options.targetType ?? "intermediate";
+    return this.#withLock(options.table, "disable_mirroring", async () => {
+      const table = Table.parse(options.table);
+      const targetType = options.targetType ?? "intermediate";
 
-    if (!(await table.exists(tx))) {
-      throw new Error(`Table not found: ${table.toString()}`);
-    }
+      if (!(await table.exists(tx))) {
+        throw new Error(`Table not found: ${table.toString()}`);
+      }
 
-    await new Mirroring({ source: table, targetType }).disable(tx);
+      await new Mirroring({ source: table, targetType }).disable(tx);
+    });
   }
 
   /**
@@ -359,10 +401,15 @@ export class Pgslice {
    * @yields FillBatchResult after each batch is processed
    */
   async *fill(options: FillOptions): AsyncGenerator<FillBatchResult> {
-    const filler = await this.start((tx) => Filler.init(tx, options));
+    const releaseLock = await this.#acquireLock(options.table, "fill");
+    try {
+      const filler = await this.start((tx) => Filler.init(tx, options));
 
-    for await (const batch of filler.fill(this.connection)) {
-      yield batch;
+      for await (const batch of filler.fill(this.connection)) {
+        yield batch;
+      }
+    } finally {
+      await releaseLock();
     }
   }
 
@@ -376,12 +423,17 @@ export class Pgslice {
   async *synchronize(
     options: SynchronizeOptions,
   ): AsyncGenerator<SynchronizeBatchResult> {
-    const synchronizer = await this.start((tx) =>
-      Synchronizer.init(tx, options),
-    );
+    const releaseLock = await this.#acquireLock(options.table, "synchronize");
+    try {
+      const synchronizer = await this.start((tx) =>
+        Synchronizer.init(tx, options),
+      );
 
-    for await (const batch of synchronizer.synchronize(this.connection)) {
-      yield batch;
+      for await (const batch of synchronizer.synchronize(this.connection)) {
+        yield batch;
+      }
+    } finally {
+      await releaseLock();
     }
   }
 
@@ -398,12 +450,14 @@ export class Pgslice {
     tx: DatabaseTransactionConnection,
     options: SwapOptions,
   ): Promise<void> {
-    const swapper = new Swapper({
-      table: options.table,
-      direction: "forward",
-      lockTimeout: options.lockTimeout,
+    return this.#withLock(options.table, "swap", async () => {
+      const swapper = new Swapper({
+        table: options.table,
+        direction: "forward",
+        lockTimeout: options.lockTimeout,
+      });
+      await swapper.execute(tx);
     });
-    await swapper.execute(tx);
   }
 
   /**
@@ -419,12 +473,14 @@ export class Pgslice {
     tx: DatabaseTransactionConnection,
     options: UnswapOptions,
   ): Promise<void> {
-    const swapper = new Swapper({
-      table: options.table,
-      direction: "reverse",
-      lockTimeout: options.lockTimeout,
+    return this.#withLock(options.table, "unswap", async () => {
+      const swapper = new Swapper({
+        table: options.table,
+        direction: "reverse",
+        lockTimeout: options.lockTimeout,
+      });
+      await swapper.execute(tx);
     });
-    await swapper.execute(tx);
   }
 
   /**
@@ -460,17 +516,19 @@ export class Pgslice {
     tx: DatabaseTransactionConnection,
     options: UnprepOptions,
   ): Promise<void> {
-    const table = Table.parse(options.table);
-    const intermediate = table.intermediate;
+    return this.#withLock(options.table, "unprep", async () => {
+      const table = Table.parse(options.table);
+      const intermediate = table.intermediate;
 
-    if (!(await intermediate.exists(tx))) {
-      throw new Error(`Table not found: ${intermediate.toString()}`);
-    }
+      if (!(await intermediate.exists(tx))) {
+        throw new Error(`Table not found: ${intermediate.toString()}`);
+      }
 
-    await tx.query(
-      sql.typeAlias("void")`
-        DROP TABLE ${intermediate.sqlIdentifier} CASCADE
-      `,
-    );
+      await tx.query(
+        sql.typeAlias("void")`
+          DROP TABLE ${intermediate.sqlIdentifier} CASCADE
+        `,
+      );
+    });
   }
 }
