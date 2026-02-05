@@ -15,9 +15,11 @@ import type {
   FillOptions,
   Period,
   PrepOptions,
+  StatusOptions,
   SwapOptions,
   SynchronizeBatchResult,
   SynchronizeOptions,
+  TableStatus,
   UnprepOptions,
   UnswapOptions,
 } from "./types.js";
@@ -472,5 +474,42 @@ export class Pgslice {
         DROP TABLE ${intermediate.sqlIdentifier} CASCADE
       `,
     );
+  }
+
+  async status(options: StatusOptions): Promise<TableStatus> {
+    const table = Table.parse(options.table);
+    const intermediate = table.intermediate;
+
+    const intermediateExists = await intermediate.exists(this.connection);
+
+    // Check intermediate for partitions pre-swap, original post-swap
+    let partitionCount = 0;
+    if (intermediateExists) {
+      const partitions = await this.start((tx) => intermediate.partitions(tx));
+      partitionCount = partitions.length;
+    } else {
+      const partitions = await this.start((tx) => table.partitions(tx));
+      partitionCount = partitions.length;
+    }
+
+    const mirrorTriggerExists = await table.triggerExists(
+      this.connection,
+      `${table.name}_mirror_trigger`,
+    );
+
+    const retiredMirrorTriggerExists = await table.triggerExists(
+      this.connection,
+      `${table.name}_retired_mirror_trigger`,
+    );
+
+    const originalIsPartitioned = await table.isPartitioned(this.connection);
+
+    return {
+      intermediateExists,
+      partitionCount,
+      mirrorTriggerExists,
+      retiredMirrorTriggerExists,
+      originalIsPartitioned,
+    };
   }
 }

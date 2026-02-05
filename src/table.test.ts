@@ -4,6 +4,104 @@ import { sql } from "slonik";
 import { pgsliceTest as test } from "./testing/index.js";
 import { Table } from "./table.js";
 
+describe("Table.isPartitioned", () => {
+  test("returns true for partitioned table", async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table (
+        id BIGSERIAL,
+        created_at DATE NOT NULL,
+        PRIMARY KEY (id, created_at)
+      ) PARTITION BY RANGE (created_at)
+    `);
+
+    const table = Table.parse("test_table");
+    const result = await table.isPartitioned(transaction);
+
+    expect(result).toBe(true);
+  });
+
+  test("returns false for regular table", async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table (id BIGSERIAL PRIMARY KEY, name TEXT)
+    `);
+
+    const table = Table.parse("test_table");
+    const result = await table.isPartitioned(transaction);
+
+    expect(result).toBe(false);
+  });
+
+  test("returns false for non-existent table", async ({ transaction }) => {
+    const table = Table.parse("nonexistent_table");
+    const result = await table.isPartitioned(transaction);
+
+    expect(result).toBe(false);
+  });
+});
+
+describe("Table.triggerExists", () => {
+  test("returns true when trigger exists", async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table (id BIGSERIAL PRIMARY KEY, name TEXT)
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE FUNCTION test_trigger_fn() RETURNS TRIGGER AS $$
+      BEGIN RETURN NEW; END;
+      $$ LANGUAGE plpgsql
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TRIGGER test_trigger
+      AFTER INSERT ON test_table
+      FOR EACH ROW EXECUTE FUNCTION test_trigger_fn()
+    `);
+
+    const table = Table.parse("test_table");
+    const result = await table.triggerExists(transaction, "test_trigger");
+
+    expect(result).toBe(true);
+  });
+
+  test("returns false when trigger does not exist", async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table (id BIGSERIAL PRIMARY KEY, name TEXT)
+    `);
+
+    const table = Table.parse("test_table");
+    const result = await table.triggerExists(
+      transaction,
+      "nonexistent_trigger",
+    );
+
+    expect(result).toBe(false);
+  });
+
+  test("returns false for trigger on different table", async ({
+    transaction,
+  }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table (id BIGSERIAL PRIMARY KEY, name TEXT)
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE other_table (id BIGSERIAL PRIMARY KEY, name TEXT)
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE FUNCTION test_trigger_fn() RETURNS TRIGGER AS $$
+      BEGIN RETURN NEW; END;
+      $$ LANGUAGE plpgsql
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TRIGGER test_trigger
+      AFTER INSERT ON other_table
+      FOR EACH ROW EXECUTE FUNCTION test_trigger_fn()
+    `);
+
+    const table = Table.parse("test_table");
+    const result = await table.triggerExists(transaction, "test_trigger");
+
+    expect(result).toBe(false);
+  });
+});
+
 describe("Table.maxId", () => {
   test("returns max bigint ID from table", async ({ transaction }) => {
     await transaction.query(sql.unsafe`
