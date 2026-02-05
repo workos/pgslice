@@ -1,6 +1,10 @@
-import { test as baseTest } from "vitest";
+import { test as baseTest, vi } from "vitest";
 import { Pgslice } from "../pgslice.js";
-import { createPool, DatabaseTransactionConnection } from "slonik";
+import {
+  createPool,
+  DatabasePool,
+  DatabaseTransactionConnection,
+} from "slonik";
 
 class TestRollbackError extends Error {
   constructor() {
@@ -20,15 +24,23 @@ function getTestDatabaseUrl(): URL {
 export const pgsliceTest = baseTest.extend<{
   databaseUrl: URL;
   pgslice: Pgslice;
+  pool: DatabasePool;
   transaction: DatabaseTransactionConnection;
 }>({
   databaseUrl: getTestDatabaseUrl(),
 
-  transaction: async ({ databaseUrl }, use) => {
-    const connection = await createPool(databaseUrl.toString());
-
+  pool: async ({ databaseUrl }, use) => {
+    const pool = await createPool(databaseUrl.toString());
     try {
-      await connection.transaction(async (transaction) => {
+      await use(pool);
+    } finally {
+      await pool.end();
+    }
+  },
+
+  transaction: async ({ pool }, use) => {
+    try {
+      await pool.transaction(async (transaction) => {
         await use(transaction);
         throw new TestRollbackError();
       });
@@ -37,9 +49,35 @@ export const pgsliceTest = baseTest.extend<{
     }
   },
 
-  pgslice: async ({ transaction }, use) => {
-    const pgslice = new Pgslice(transaction, {
-      // Disable advisory locks since we run tests both transcationally
+  pgslice: async ({ pool, transaction }, use) => {
+    const transactionalizedPool = {
+      ...transaction,
+      configuration: pool.configuration,
+      connect: vi.fn().mockImplementation((handler) => handler(transaction)),
+      end: vi.fn().mockResolvedValue(undefined),
+      state: vi.fn().mockReturnValue(pool.state),
+
+      // A bunch of event emitter stuff that we don't use but having this
+      // makes the compiler helper.
+      addListener: vi.fn().mockReturnThis(),
+      emit: vi.fn().mockReturnValue(false),
+      eventNames: vi.fn().mockReturnValue([]),
+      getMaxListeners: vi.fn().mockReturnValue(0),
+      listenerCount: vi.fn().mockReturnValue(0),
+      listeners: vi.fn().mockReturnThis(),
+      off: vi.fn().mockReturnThis(),
+      on: vi.fn().mockReturnThis(),
+      once: vi.fn().mockReturnThis(),
+      prependListener: vi.fn().mockReturnThis(),
+      prependOnceListener: vi.fn().mockReturnThis(),
+      rawListeners: vi.fn().mockReturnThis(),
+      removeAllListeners: vi.fn().mockReturnThis(),
+      removeListener: vi.fn().mockReturnThis(),
+      setMaxListeners: vi.fn().mockReturnThis(),
+    } satisfies DatabasePool;
+
+    const pgslice = new Pgslice(transactionalizedPool, {
+      // Disable advisory locks since we run tests both transactionally
       // and concurrently, which these would otherwise interfere with.
       advisoryLocks: false,
     });

@@ -209,7 +209,7 @@ describe("Pgslice.fill", () => {
 
     // Fill data
     const batches = [];
-    for await (const batch of pgslice.fill({ table: "posts", batchSize: 10 })) {
+    for await (const batch of pgslice.fill(transaction, { table: "posts", batchSize: 10 })) {
       batches.push(batch);
     }
 
@@ -258,7 +258,7 @@ describe("Pgslice.fill", () => {
 
     // Fill data
     const batches = [];
-    for await (const batch of pgslice.fill({ table: "posts", batchSize: 10 })) {
+    for await (const batch of pgslice.fill(transaction, { table: "posts", batchSize: 10 })) {
       batches.push(batch);
     }
 
@@ -287,7 +287,7 @@ describe("Pgslice.fill", () => {
     });
 
     const batches = [];
-    for await (const batch of pgslice.fill({ table: "posts" })) {
+    for await (const batch of pgslice.fill(transaction, { table: "posts" })) {
       batches.push(batch);
     }
 
@@ -310,7 +310,7 @@ describe("Pgslice.fill", () => {
 
     // Start from ID 5
     const batches = [];
-    for await (const batch of pgslice.fill({
+    for await (const batch of pgslice.fill(transaction, {
       table: "posts",
       start: "5",
       batchSize: 100,
@@ -335,7 +335,7 @@ describe("Pgslice.fill", () => {
     `);
 
     const error = await (async () => {
-      for await (const _batch of pgslice.fill({ table: "posts" })) {
+      for await (const _batch of pgslice.fill(transaction, { table: "posts" })) {
         // should not reach here
       }
     })().catch((e) => e);
@@ -352,7 +352,7 @@ describe("Pgslice.fill", () => {
     `);
 
     const error = await (async () => {
-      for await (const _batch of pgslice.fill({ table: "posts" })) {
+      for await (const _batch of pgslice.fill(transaction, { table: "posts" })) {
         // should not reach here
       }
     })().catch((e) => e);
@@ -373,7 +373,7 @@ describe("Pgslice.fill", () => {
     `);
 
     const error = await (async () => {
-      for await (const _batch of pgslice.fill({ table: "posts" })) {
+      for await (const _batch of pgslice.fill(transaction, { table: "posts" })) {
         // should not reach here
       }
     })().catch((e) => e);
