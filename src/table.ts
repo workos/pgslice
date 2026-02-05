@@ -156,6 +156,42 @@ export class Table {
   }
 
   /**
+   * Checks if this table is a partitioned table (relkind = 'p').
+   */
+  async isPartitioned(connection: CommonQueryMethods): Promise<boolean> {
+    const result = await connection.one(
+      sql.type(z.object({ count: z.coerce.number() }))`
+        SELECT COUNT(*) FROM pg_class c
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        WHERE n.nspname = ${this.schema}
+          AND c.relname = ${this.name}
+          AND c.relkind = 'p'
+      `,
+    );
+    return result.count > 0;
+  }
+
+  /**
+   * Checks if a trigger with the given name exists on this table.
+   */
+  async triggerExists(
+    connection: CommonQueryMethods,
+    triggerName: string,
+  ): Promise<boolean> {
+    const result = await connection.one(
+      sql.type(z.object({ count: z.coerce.number() }))`
+        SELECT COUNT(*) FROM pg_trigger t
+        JOIN pg_class c ON t.tgrelid = c.oid
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        WHERE n.nspname = ${this.schema}
+          AND c.relname = ${this.name}
+          AND t.tgname = ${triggerName}
+      `,
+    );
+    return result.count > 0;
+  }
+
+  /**
    * Gets column metadata for this table (excluding generated columns).
    */
   async columns(tx: DatabaseTransactionConnection): Promise<ColumnInfo[]> {

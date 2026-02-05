@@ -666,6 +666,51 @@ describe("Pgslice.addPartitions", () => {
   });
 });
 
+describe("Pgslice.status", () => {
+  test("returns status for a plain table", async ({ pgslice, transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts (
+        id SERIAL PRIMARY KEY,
+        created_at DATE NOT NULL
+      )
+    `);
+
+    const status = await pgslice.status({ table: "posts" });
+    expect(status).toEqual({
+      intermediateExists: false,
+      partitionCount: 0,
+      mirrorTriggerExists: false,
+      retiredMirrorTriggerExists: false,
+      originalIsPartitioned: false,
+    });
+  });
+
+  test("returns status after prep", async ({ pgslice, transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE events (
+        id BIGSERIAL PRIMARY KEY,
+        created_at DATE NOT NULL
+      )
+    `);
+
+    await pgslice.prep(transaction, {
+      table: "events",
+      column: "created_at",
+      period: "month",
+      partition: true,
+    });
+
+    const status = await pgslice.status({ table: "events" });
+    expect(status).toEqual({
+      intermediateExists: true,
+      partitionCount: 0,
+      originalIsPartitioned: false,
+      mirrorTriggerExists: false,
+      retiredMirrorTriggerExists: false,
+    });
+  });
+});
+
 describe("Pgslice.synchronize", () => {
   test("synchronizes data", async ({ pgslice, transaction }) => {
     // Create source table with data

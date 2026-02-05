@@ -16,9 +16,11 @@ import type {
   FillOptions,
   Period,
   PrepOptions,
+  StatusOptions,
   SwapOptions,
   SynchronizeBatchResult,
   SynchronizeOptions,
+  TableStatus,
   UnprepOptions,
   UnswapOptions,
 } from "./types.js";
@@ -564,5 +566,44 @@ export class Pgslice {
         );
       }),
     );
+  }
+
+  async status(options: StatusOptions): Promise<TableStatus> {
+    const table = Table.parse(options.table);
+    const intermediate = table.intermediate;
+
+    const intermediateExists = await intermediate.exists(this.pool);
+
+    // Check intermediate for partitions pre-swap, original post-swap
+    let partitionCount = 0;
+    if (intermediateExists) {
+      const partitions = await this.start((conn) =>
+        intermediate.partitions(conn),
+      );
+      partitionCount = partitions.length;
+    } else {
+      const partitions = await this.start((conn) => table.partitions(conn));
+      partitionCount = partitions.length;
+    }
+
+    const mirrorTriggerExists = await table.triggerExists(
+      this.pool,
+      Mirroring.triggerNameFor(table, "intermediate"),
+    );
+
+    const retiredMirrorTriggerExists = await table.triggerExists(
+      this.pool,
+      Mirroring.triggerNameFor(table, "retired"),
+    );
+
+    const originalIsPartitioned = await table.isPartitioned(this.pool);
+
+    return {
+      intermediateExists,
+      partitionCount,
+      mirrorTriggerExists,
+      retiredMirrorTriggerExists,
+      originalIsPartitioned,
+    };
   }
 }

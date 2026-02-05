@@ -191,3 +191,21 @@ export interface AnalyzeOptions {
 export interface UnprepOptions {
   table: string;
 }
+
+/**
+ * Options for the `status` command.
+ */
+export interface StatusOptions {
+  table: string;
+}
+
+/**
+ * Status information about a table's partitioning state.
+ */
+export interface TableStatus {
+  intermediateExists: boolean;
+  partitionCount: number;
+  mirrorTriggerExists: boolean;
+  retiredMirrorTriggerExists: boolean;
+  originalIsPartitioned: boolean;
+}

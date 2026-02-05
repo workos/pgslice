@@ -61,12 +61,18 @@ export class Mirroring {
     return sql.identifier([`${this.#source.name}_${suffix}`]);
   }
 
-  get #triggerName() {
+  static triggerNameFor(table: Table, targetType: MirroringTargetType): string {
     const suffix =
-      this.#targetType === "intermediate"
+      targetType === "intermediate"
         ? "mirror_trigger"
         : "retired_mirror_trigger";
-    return sql.identifier([`${this.#source.name}_${suffix}`]);
+    return `${table.name}_${suffix}`;
+  }
+
+  get #triggerName() {
+    return sql.identifier([
+      Mirroring.triggerNameFor(this.#source, this.#targetType),
+    ]);
   }
 
   #buildWhereClause(columns: string[]) {
