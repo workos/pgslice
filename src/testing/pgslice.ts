@@ -8,21 +8,24 @@ class TestRollbackError extends Error {
   }
 }
 
-function getTestDatabaseUrl(): string {
+function getTestDatabaseUrl(): URL {
   const url = process.env.PGSLICE_URL;
   if (!url) {
     throw new Error("PGSLICE_URL environment variable must be set for tests");
   }
 
-  return url;
+  return new URL(url);
 }
 
 export const pgsliceTest = baseTest.extend<{
+  databaseUrl: URL;
   pgslice: Pgslice;
   transaction: DatabaseTransactionConnection;
 }>({
-  transaction: async ({}, use) => {
-    const connection = await createPool(getTestDatabaseUrl().toString());
+  databaseUrl: getTestDatabaseUrl(),
+
+  transaction: async ({ databaseUrl }, use) => {
+    const connection = await createPool(databaseUrl.toString());
 
     try {
       await connection.transaction(async (transaction) => {

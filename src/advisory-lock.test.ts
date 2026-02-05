@@ -5,14 +5,6 @@ import { pgsliceTest as test } from "./testing/index.js";
 import { AdvisoryLock, AdvisoryLockError } from "./advisory-lock.js";
 import { Table } from "./table.js";
 
-function getTestDatabaseUrl(): string {
-  const url = process.env.PGSLICE_URL;
-  if (!url) {
-    throw new Error("PGSLICE_URL environment variable must be set for tests");
-  }
-  return url;
-}
-
 describe("AdvisoryLock.withLock", () => {
   test("executes handler and returns result", async ({ transaction }) => {
     const table = Table.parse("test_table");
@@ -47,16 +39,18 @@ describe("AdvisoryLock.withLock", () => {
     expect(result).toBe("acquired again");
   });
 
-  test("throws AdvisoryLockError when lock is held by another session", async () => {
+  test("throws AdvisoryLockError when lock is held by another session", async ({
+    databaseUrl,
+  }) => {
     const table = Table.parse("test_table");
     const operation = "test_op";
 
     // Create two separate pools - each will hold a separate session
-    const pool1 = await createPool(getTestDatabaseUrl(), {
+    const pool1 = await createPool(databaseUrl.toString(), {
       maximumPoolSize: 1,
       queryRetryLimit: 0,
     });
-    const pool2 = await createPool(getTestDatabaseUrl(), {
+    const pool2 = await createPool(databaseUrl.toString(), {
       maximumPoolSize: 1,
       queryRetryLimit: 0,
     });
@@ -90,14 +84,16 @@ describe("AdvisoryLock.acquire", () => {
     await release();
   });
 
-  test("same table + different operation = different locks", async () => {
+  test("same table + different operation = different locks", async ({
+    databaseUrl,
+  }) => {
     const table = Table.parse("test_table");
 
-    const pool1 = await createPool(getTestDatabaseUrl(), {
+    const pool1 = await createPool(databaseUrl.toString(), {
       maximumPoolSize: 1,
       queryRetryLimit: 0,
     });
-    const pool2 = await createPool(getTestDatabaseUrl(), {
+    const pool2 = await createPool(databaseUrl.toString(), {
       maximumPoolSize: 1,
       queryRetryLimit: 0,
     });
@@ -120,15 +116,17 @@ describe("AdvisoryLock.acquire", () => {
     }
   });
 
-  test("different table + same operation = different locks", async () => {
+  test("different table + same operation = different locks", async ({
+    databaseUrl,
+  }) => {
     const table1 = Table.parse("table_one");
     const table2 = Table.parse("table_two");
 
-    const pool1 = await createPool(getTestDatabaseUrl(), {
+    const pool1 = await createPool(databaseUrl.toString(), {
       maximumPoolSize: 1,
       queryRetryLimit: 0,
     });
-    const pool2 = await createPool(getTestDatabaseUrl(), {
+    const pool2 = await createPool(databaseUrl.toString(), {
       maximumPoolSize: 1,
       queryRetryLimit: 0,
     });
