@@ -96,6 +96,7 @@ export class Pgslice {
   }
 
   async #withLock<T>(
+    tx: CommonQueryMethods,
     table: Table,
     operation: string,
     handler: () => Promise<T>,
@@ -103,7 +104,7 @@ export class Pgslice {
     if (!this.#advisoryLocks) {
       return handler();
     }
-    return AdvisoryLock.withLock(this.connection, table, operation, handler);
+    return AdvisoryLock.withLock(tx, table, operation, handler);
   }
 
   async #acquireLock(
@@ -138,7 +139,7 @@ export class Pgslice {
   ): Promise<void> {
     const table = Table.parse(options.table);
 
-    return this.#withLock(table, "prep", async () => {
+    return this.#withLock(tx, table, "prep", async () => {
       const intermediate = table.intermediate;
 
       if (!(await table.exists(tx))) {
@@ -274,7 +275,7 @@ export class Pgslice {
   ): Promise<void> {
     const originalTable = Table.parse(options.table);
 
-    return this.#withLock(originalTable, "add_partitions", async () => {
+    return this.#withLock(tx, originalTable, "add_partitions", async () => {
       const targetTable = options.intermediate
         ? originalTable.intermediate
         : originalTable;
@@ -361,7 +362,7 @@ export class Pgslice {
   ): Promise<void> {
     const table = Table.parse(options.table);
 
-    return this.#withLock(table, "enable_mirroring", async () => {
+    return this.#withLock(tx, table, "enable_mirroring", async () => {
       const targetType = options.targetType ?? "intermediate";
       const target = table[targetType];
 
@@ -386,7 +387,7 @@ export class Pgslice {
   ): Promise<void> {
     const table = Table.parse(options.table);
 
-    return this.#withLock(table, "disable_mirroring", async () => {
+    return this.#withLock(tx, table, "disable_mirroring", async () => {
       const targetType = options.targetType ?? "intermediate";
 
       if (!(await table.exists(tx))) {
@@ -456,7 +457,7 @@ export class Pgslice {
   ): Promise<void> {
     const table = Table.parse(options.table);
 
-    return this.#withLock(table, "swap", async () => {
+    return this.#withLock(tx, table, "swap", async () => {
       const swapper = new Swapper({
         table,
         direction: "forward",
@@ -481,7 +482,7 @@ export class Pgslice {
   ): Promise<void> {
     const table = Table.parse(options.table);
 
-    return this.#withLock(table, "unswap", async () => {
+    return this.#withLock(tx, table, "unswap", async () => {
       const swapper = new Swapper({
         table,
         direction: "reverse",
@@ -526,7 +527,7 @@ export class Pgslice {
   ): Promise<void> {
     const table = Table.parse(options.table);
 
-    return this.#withLock(table, "unprep", async () => {
+    return this.#withLock(tx, table, "unprep", async () => {
       const intermediate = table.intermediate;
 
       if (!(await intermediate.exists(tx))) {
