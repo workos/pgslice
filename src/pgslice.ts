@@ -33,6 +33,11 @@ import { AdvisoryLock } from "./advisory-lock.js";
 
 interface PgsliceOptions {
   dryRun?: boolean;
+
+  /**
+   * Whether to use Postgres advisory locks to prevent concurrent operations
+   * on the same table for the same operation. Defaults to true.
+   */
   advisoryLocks?: boolean;
 }
 

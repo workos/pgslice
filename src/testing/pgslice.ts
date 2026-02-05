@@ -39,6 +39,8 @@ export const pgsliceTest = baseTest.extend<{
 
   pgslice: async ({ transaction }, use) => {
     const pgslice = new Pgslice(transaction, {
+      // Disable advisory locks since we run tests both transcationally
+      // and concurrently, which these would otherwise interfere with.
       advisoryLocks: false,
     });
 
