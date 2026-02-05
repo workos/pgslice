@@ -13,7 +13,7 @@ export class AdvisoryLockError extends Error {
   }
 }
 
-export class AdvisoryLock {
+export abstract class AdvisoryLock {
   /**
    * Executes a handler while holding an advisory lock.
    * The lock is automatically released when the handler completes or throws.
