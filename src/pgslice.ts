@@ -96,19 +96,14 @@ export class Pgslice {
   }
 
   async #withLock<T>(
-    table: string,
+    table: Table,
     operation: string,
     handler: () => Promise<T>,
   ): Promise<T> {
     if (!this.#advisoryLocks) {
       return handler();
     }
-    return AdvisoryLock.withLock(
-      this.connection,
-      Table.parse(table),
-      operation,
-      handler,
-    );
+    return AdvisoryLock.withLock(this.connection, table, operation, handler);
   }
 
   async #acquireLock(
@@ -141,8 +136,9 @@ export class Pgslice {
     tx: DatabaseTransactionConnection,
     options: PrepOptions,
   ): Promise<void> {
-    return this.#withLock(options.table, "prep", async () => {
-      const table = Table.parse(options.table);
+    const table = Table.parse(options.table);
+
+    return this.#withLock(table, "prep", async () => {
       const intermediate = table.intermediate;
 
       if (!(await table.exists(tx))) {
@@ -276,8 +272,9 @@ export class Pgslice {
     tx: DatabaseTransactionConnection,
     options: AddPartitionsOptions,
   ): Promise<void> {
-    return this.#withLock(options.table, "add_partitions", async () => {
-      const originalTable = Table.parse(options.table);
+    const originalTable = Table.parse(options.table);
+
+    return this.#withLock(originalTable, "add_partitions", async () => {
       const targetTable = options.intermediate
         ? originalTable.intermediate
         : originalTable;
@@ -362,8 +359,9 @@ export class Pgslice {
     tx: DatabaseTransactionConnection,
     options: EnableMirroringOptions,
   ): Promise<void> {
-    return this.#withLock(options.table, "enable_mirroring", async () => {
-      const table = Table.parse(options.table);
+    const table = Table.parse(options.table);
+
+    return this.#withLock(table, "enable_mirroring", async () => {
       const targetType = options.targetType ?? "intermediate";
       const target = table[targetType];
 
@@ -386,8 +384,9 @@ export class Pgslice {
     tx: DatabaseTransactionConnection,
     options: DisableMirroringOptions,
   ): Promise<void> {
-    return this.#withLock(options.table, "disable_mirroring", async () => {
-      const table = Table.parse(options.table);
+    const table = Table.parse(options.table);
+
+    return this.#withLock(table, "disable_mirroring", async () => {
       const targetType = options.targetType ?? "intermediate";
 
       if (!(await table.exists(tx))) {
@@ -455,9 +454,11 @@ export class Pgslice {
     tx: DatabaseTransactionConnection,
     options: SwapOptions,
   ): Promise<void> {
-    return this.#withLock(options.table, "swap", async () => {
+    const table = Table.parse(options.table);
+
+    return this.#withLock(table, "swap", async () => {
       const swapper = new Swapper({
-        table: options.table,
+        table,
         direction: "forward",
         lockTimeout: options.lockTimeout,
       });
@@ -478,9 +479,11 @@ export class Pgslice {
     tx: DatabaseTransactionConnection,
     options: UnswapOptions,
   ): Promise<void> {
-    return this.#withLock(options.table, "unswap", async () => {
+    const table = Table.parse(options.table);
+
+    return this.#withLock(table, "unswap", async () => {
       const swapper = new Swapper({
-        table: options.table,
+        table,
         direction: "reverse",
         lockTimeout: options.lockTimeout,
       });
@@ -521,8 +524,9 @@ export class Pgslice {
     tx: DatabaseTransactionConnection,
     options: UnprepOptions,
   ): Promise<void> {
-    return this.#withLock(options.table, "unprep", async () => {
-      const table = Table.parse(options.table);
+    const table = Table.parse(options.table);
+
+    return this.#withLock(table, "unprep", async () => {
       const intermediate = table.intermediate;
 
       if (!(await intermediate.exists(tx))) {
