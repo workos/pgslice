@@ -24,8 +24,13 @@ describe("StatusCommand", () => {
 
     expect(exitCode).toBe(0);
     const status = JSON.parse(commandContext.stdout.read()?.toString() ?? "");
-    expect(status).toHaveProperty("intermediateExists");
-    expect(status).toHaveProperty("partitionCount");
+    expect(status).toEqual({
+      intermediateExists: false,
+      partitionCount: 0,
+      mirrorTriggerExists: false,
+      retiredMirrorTriggerExists: false,
+      originalIsPartitioned: false,
+    });
   });
 
   test("outputs human-readable status", async ({ cli, commandContext }) => {

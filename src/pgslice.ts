@@ -572,29 +572,31 @@ export class Pgslice {
     const table = Table.parse(options.table);
     const intermediate = table.intermediate;
 
-    const intermediateExists = await intermediate.exists(this.connection);
+    const intermediateExists = await intermediate.exists(this.pool);
 
     // Check intermediate for partitions pre-swap, original post-swap
     let partitionCount = 0;
     if (intermediateExists) {
-      const partitions = await this.start((tx) => intermediate.partitions(tx));
+      const partitions = await this.start((conn) =>
+        intermediate.partitions(conn),
+      );
       partitionCount = partitions.length;
     } else {
-      const partitions = await this.start((tx) => table.partitions(tx));
+      const partitions = await this.start((conn) => table.partitions(conn));
       partitionCount = partitions.length;
     }
 
     const mirrorTriggerExists = await table.triggerExists(
-      this.connection,
-      `${table.name}_mirror_trigger`,
+      this.pool,
+      Mirroring.triggerNameFor(table, "intermediate"),
     );
 
     const retiredMirrorTriggerExists = await table.triggerExists(
-      this.connection,
-      `${table.name}_retired_mirror_trigger`,
+      this.pool,
+      Mirroring.triggerNameFor(table, "retired"),
     );
 
-    const originalIsPartitioned = await table.isPartitioned(this.connection);
+    const originalIsPartitioned = await table.isPartitioned(this.pool);
 
     return {
       intermediateExists,
