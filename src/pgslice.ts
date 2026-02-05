@@ -5,6 +5,7 @@ import {
   DatabaseTransactionConnection,
   type DatabasePool,
 } from "slonik";
+import { createQueryLoggingInterceptor } from "slonik-interceptor-query-logging";
 
 import type {
   AddPartitionsOptions,
@@ -72,6 +73,8 @@ export class Pgslice {
 
       // Never retry queries.
       queryRetryLimit: 0,
+
+      interceptors: [createQueryLoggingInterceptor()],
     });
     const instance = new Pgslice(pool, options);
     return instance;
