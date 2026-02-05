@@ -25,7 +25,7 @@ export class DisableMirroringCommand extends BaseCommand {
 
   override async perform(pgslice: Pgslice): Promise<void> {
     await pgslice.start(async (tx) => {
-      await this.context.pgslice.disableMirroring(tx, { table: this.table });
+      await pgslice.disableMirroring(tx, { table: this.table });
       this.context.stdout.write(
         `Mirroring triggers disabled for ${this.table}\n`,
       );

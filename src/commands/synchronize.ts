@@ -75,36 +75,38 @@ export class SynchronizeCommand extends BaseCommand {
     let targetName: string | null = null;
     let headerPrinted = false;
 
-    for await (const batch of pgslice.synchronize({
-      table: this.table,
-      start: this.start,
-      windowSize: this.windowSize,
-      dryRun: this.dryRun,
-    })) {
-      // Print header on first batch (we need synchronizer to know table names)
-      if (!headerPrinted) {
-        // Get table names from the batch (inferred from the command options)
-        sourceName = this.table;
-        targetName = `${this.table}_intermediate`;
-        this.#printHeader(sourceName, targetName);
-        headerPrinted = true;
+    await pgslice.start(async (conn) => {
+      for await (const batch of pgslice.synchronize(conn, {
+        table: this.table,
+        start: this.start,
+        windowSize: this.windowSize,
+        dryRun: this.dryRun,
+      })) {
+        // Print header on first batch (we need synchronizer to know table names)
+        if (!headerPrinted) {
+          // Get table names from the batch (inferred from the command options)
+          sourceName = this.table;
+          targetName = `${this.table}_intermediate`;
+          this.#printHeader(sourceName, targetName);
+          headerPrinted = true;
+        }
+
+        stats.totalBatches++;
+        stats.totalRowsCompared += batch.rowsCompared;
+        stats.matchingRows += batch.matchingRows;
+        stats.rowsWithDifferences += batch.rowsUpdated;
+        stats.missingRows += batch.rowsInserted;
+        stats.extraRows += batch.rowsDeleted;
+
+        this.#printBatchResult(batch);
+
+        // Calculate and apply adaptive delay
+        const sleepTime = this.#calculateSleepTime(batch.batchDurationMs);
+        if (sleepTime > 0) {
+          await sleep(sleepTime * 1000);
+        }
       }
-
-      stats.totalBatches++;
-      stats.totalRowsCompared += batch.rowsCompared;
-      stats.matchingRows += batch.matchingRows;
-      stats.rowsWithDifferences += batch.rowsUpdated;
-      stats.missingRows += batch.rowsInserted;
-      stats.extraRows += batch.rowsDeleted;
-
-      this.#printBatchResult(batch);
-
-      // Calculate and apply adaptive delay
-      const sleepTime = this.#calculateSleepTime(batch.batchDurationMs);
-      if (sleepTime > 0) {
-        await sleep(sleepTime * 1000);
-      }
-    }
+    });
 
     // Print summary
     this.#printSummary(stats);
