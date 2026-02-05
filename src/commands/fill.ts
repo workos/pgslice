@@ -56,25 +56,27 @@ export class FillCommand extends BaseCommand {
   });
 
   async perform(pgslice: Pgslice) {
-    let hasBatches = false;
-    for await (const batch of pgslice.fill({
-      table: this.table,
-      swapped: this.swapped,
-      batchSize: this.batchSize,
-      start: this.start,
-    })) {
-      hasBatches = true;
+    await pgslice.start(async (conn) => {
+      let hasBatches = false;
+      for await (const batch of pgslice.fill(conn, {
+        table: this.table,
+        swapped: this.swapped,
+        batchSize: this.batchSize,
+        start: this.start,
+      })) {
+        hasBatches = true;
 
-      this.context.stdout.write(`/* batch ${batch.batchNumber} */\n`);
+        this.context.stdout.write(`/* batch ${batch.batchNumber} */\n`);
 
-      // Sleep between batches if requested
-      if (this.sleep) {
-        await sleep(this.sleep * 1000);
+        // Sleep between batches if requested
+        if (this.sleep) {
+          await sleep(this.sleep * 1000);
+        }
       }
-    }
 
-    if (!hasBatches) {
-      this.context.stdout.write("/* nothing to fill */\n");
-    }
+      if (!hasBatches) {
+        this.context.stdout.write("/* nothing to fill */\n");
+      }
+    });
   }
 }

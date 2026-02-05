@@ -6,7 +6,7 @@ import type { SwapDirection } from "./types.js";
 import { sql } from "./sql-utils.js";
 
 interface SwapperOptions {
-  table: string;
+  table: Table;
   direction: SwapDirection;
   lockTimeout?: string;
 }
@@ -37,7 +37,7 @@ export class Swapper {
   readonly #lockTimeout: string;
 
   constructor(options: SwapperOptions) {
-    this.#table = Table.parse(options.table);
+    this.#table = options.table;
     this.#direction = options.direction;
     this.#lockTimeout = options.lockTimeout ?? "5s";
   }

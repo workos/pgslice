@@ -13,7 +13,7 @@ describe("Swapper", () => {
         transaction,
       }) => {
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "forward",
         });
 
@@ -33,7 +33,7 @@ describe("Swapper", () => {
         `);
 
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "forward",
         });
 
@@ -65,7 +65,7 @@ describe("Swapper", () => {
         `);
 
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "forward",
         });
 
@@ -93,7 +93,7 @@ describe("Swapper", () => {
 
       test("renames original table to retired", async ({ transaction }) => {
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "forward",
         });
 
@@ -107,7 +107,7 @@ describe("Swapper", () => {
         transaction,
       }) => {
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "forward",
         });
 
@@ -121,7 +121,7 @@ describe("Swapper", () => {
         transaction,
       }) => {
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "forward",
         });
 
@@ -140,7 +140,7 @@ describe("Swapper", () => {
         `);
 
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "forward",
         });
 
@@ -186,7 +186,7 @@ describe("Swapper", () => {
         `);
 
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "forward",
         });
 
@@ -237,7 +237,7 @@ describe("Swapper", () => {
         expect(beforeResult).not.toBeNull();
 
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "forward",
         });
 
@@ -254,7 +254,7 @@ describe("Swapper", () => {
 
       test("creates retired mirroring trigger", async ({ transaction }) => {
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "forward",
         });
 
@@ -273,7 +273,7 @@ describe("Swapper", () => {
         transaction,
       }) => {
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "forward",
         });
 
@@ -310,7 +310,7 @@ describe("Swapper", () => {
 
       test("uses default lock timeout of 5s", async ({ transaction }) => {
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "forward",
         });
 
@@ -328,7 +328,7 @@ describe("Swapper", () => {
         transaction,
       }) => {
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "forward",
           lockTimeout: "10s",
         });
@@ -365,7 +365,7 @@ describe("Swapper", () => {
         transaction,
       }) => {
         const swapper = new Swapper({
-          table: "myschema.posts",
+          table: Table.parse("myschema.posts"),
           direction: "forward",
         });
 
@@ -388,7 +388,7 @@ describe("Swapper", () => {
         transaction,
       }) => {
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "reverse",
         });
 
@@ -408,7 +408,7 @@ describe("Swapper", () => {
         `);
 
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "reverse",
         });
 
@@ -440,7 +440,7 @@ describe("Swapper", () => {
         `);
 
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "reverse",
         });
 
@@ -470,7 +470,7 @@ describe("Swapper", () => {
         transaction,
       }) => {
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "reverse",
         });
 
@@ -484,7 +484,7 @@ describe("Swapper", () => {
         transaction,
       }) => {
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "reverse",
         });
 
@@ -498,7 +498,7 @@ describe("Swapper", () => {
         transaction,
       }) => {
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "reverse",
         });
 
@@ -517,7 +517,7 @@ describe("Swapper", () => {
         `);
 
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "reverse",
         });
 
@@ -563,7 +563,7 @@ describe("Swapper", () => {
         `);
 
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "reverse",
         });
 
@@ -631,7 +631,7 @@ describe("Swapper", () => {
         expect(beforeResult).not.toBeNull();
 
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "reverse",
         });
 
@@ -650,7 +650,7 @@ describe("Swapper", () => {
         transaction,
       }) => {
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "reverse",
         });
 
@@ -669,7 +669,7 @@ describe("Swapper", () => {
         transaction,
       }) => {
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "reverse",
         });
 
@@ -706,7 +706,7 @@ describe("Swapper", () => {
 
       test("uses default lock timeout of 5s", async ({ transaction }) => {
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "reverse",
         });
 
@@ -724,7 +724,7 @@ describe("Swapper", () => {
         transaction,
       }) => {
         const swapper = new Swapper({
-          table: "posts",
+          table: Table.parse("posts"),
           direction: "reverse",
           lockTimeout: "15s",
         });
@@ -761,7 +761,7 @@ describe("Swapper", () => {
         transaction,
       }) => {
         const swapper = new Swapper({
-          table: "myschema.posts",
+          table: Table.parse("myschema.posts"),
           direction: "reverse",
         });
 
@@ -804,7 +804,7 @@ describe("Swapper", () => {
       expect(await retired.exists(transaction)).toBe(false);
 
       const forwardSwapper = new Swapper({
-        table: "posts",
+        table: Table.parse("posts"),
         direction: "forward",
       });
       await forwardSwapper.execute(transaction);
@@ -814,7 +814,7 @@ describe("Swapper", () => {
       expect(await retired.exists(transaction)).toBe(true);
 
       const reverseSwapper = new Swapper({
-        table: "posts",
+        table: Table.parse("posts"),
         direction: "reverse",
       });
       await reverseSwapper.execute(transaction);
@@ -833,13 +833,13 @@ describe("Swapper", () => {
       `);
 
       const forwardSwapper = new Swapper({
-        table: "posts",
+        table: Table.parse("posts"),
         direction: "forward",
       });
       await forwardSwapper.execute(transaction);
 
       const reverseSwapper = new Swapper({
-        table: "posts",
+        table: Table.parse("posts"),
         direction: "reverse",
       });
       await reverseSwapper.execute(transaction);
