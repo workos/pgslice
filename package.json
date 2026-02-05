@@ -30,6 +30,7 @@
   "dependencies": {
     "clipanion": "^4.0.0-rc.4",
     "slonik": "^46.0.0",
+    "slonik-interceptor-query-logging": "^47.3.2",
     "typanion": "^3.14.0"
   },
   "devDependencies": {
