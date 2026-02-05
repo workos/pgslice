@@ -59,7 +59,7 @@ describe("AdvisoryLock.withLock", () => {
       // Use a transaction in pool1 to hold the connection open while we hold the lock
       await pool1.transaction(async (tx1) => {
         // Acquire lock in the first session
-        await AdvisoryLock.acquire(tx1, table, operation);
+        const release = await AdvisoryLock.acquire(tx1, table, operation);
 
         // Try to acquire the same lock in the second session
         await pool2.transaction(async (tx2) => {
@@ -67,6 +67,8 @@ describe("AdvisoryLock.withLock", () => {
             AdvisoryLock.acquire(tx2, table, operation),
           ).rejects.toThrow(AdvisoryLockError);
         });
+
+        await release();
       });
     } finally {
       await pool1.end();
@@ -102,13 +104,15 @@ describe("AdvisoryLock.acquire", () => {
       // Use transactions to hold connections open
       await pool1.transaction(async (tx1) => {
         // Acquire lock for operation1
-        await AdvisoryLock.acquire(tx1, table, "operation1");
+        const release1 = await AdvisoryLock.acquire(tx1, table, "operation1");
 
         // Should be able to acquire lock for operation2 on same table in different session
         await pool2.transaction(async (tx2) => {
           const release2 = await AdvisoryLock.acquire(tx2, table, "operation2");
           await release2();
         });
+
+        await release1();
       });
     } finally {
       await pool1.end();
@@ -135,13 +139,15 @@ describe("AdvisoryLock.acquire", () => {
       // Use transactions to hold connections open
       await pool1.transaction(async (tx1) => {
         // Acquire lock for table1
-        await AdvisoryLock.acquire(tx1, table1, "same_op");
+        const release1 = await AdvisoryLock.acquire(tx1, table1, "same_op");
 
         // Should be able to acquire lock for table2 with same operation
         await pool2.transaction(async (tx2) => {
           const release2 = await AdvisoryLock.acquire(tx2, table2, "same_op");
           await release2();
         });
+
+        await release1();
       });
     } finally {
       await pool1.end();
