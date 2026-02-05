@@ -107,13 +107,13 @@ export class Pgslice {
 
   async #acquireLock(
     connection: CommonQueryMethods,
-    table: string,
+    table: Table,
     operation: string,
   ): Promise<() => Promise<void>> {
     if (!this.#advisoryLocks) {
       return async () => {};
     }
-    return AdvisoryLock.acquire(connection, Table.parse(table), operation);
+    return AdvisoryLock.acquire(connection, table, operation);
   }
 
   async close(): Promise<void> {
@@ -418,7 +418,7 @@ export class Pgslice {
   ): AsyncGenerator<FillBatchResult> {
     const releaseLock = await this.#acquireLock(
       connection,
-      options.table,
+      Table.parse(options.table),
       "fill",
     );
 
@@ -446,7 +446,7 @@ export class Pgslice {
   ): AsyncGenerator<SynchronizeBatchResult> {
     const releaseLock = await this.#acquireLock(
       connection,
-      options.table,
+      Table.parse(options.table),
       "synchronize",
     );
     try {
