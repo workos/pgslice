@@ -694,7 +694,9 @@ describe("Pgslice.synchronize", () => {
 
     // Synchronize
     const batches = [];
-    for await (const batch of pgslice.synchronize(transaction, { table: "posts" })) {
+    for await (const batch of pgslice.synchronize(transaction, {
+      table: "posts",
+    })) {
       batches.push(batch);
     }
 
@@ -715,7 +717,9 @@ describe("Pgslice.synchronize", () => {
     `);
 
     const error = await (async () => {
-      for await (const _batch of pgslice.synchronize(transaction, { table: "posts" })) {
+      for await (const _batch of pgslice.synchronize(transaction, {
+        table: "posts",
+      })) {
         // should not reach here
       }
     })().catch((e) => e);
@@ -732,7 +736,9 @@ describe("Pgslice.synchronize", () => {
     `);
 
     const error = await (async () => {
-      for await (const _batch of pgslice.synchronize(transaction, { table: "posts" })) {
+      for await (const _batch of pgslice.synchronize(transaction, {
+        table: "posts",
+      })) {
         // should not reach here
       }
     })().catch((e) => e);
