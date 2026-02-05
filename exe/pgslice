@@ -1,7 +1,0 @@
-#!/usr/bin/env ruby
-
-# handle interrupts
-trap("SIGINT") { abort }
-
-require "pgslice"
-PgSlice::CLI.start

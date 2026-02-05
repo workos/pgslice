@@ -2,21 +2,25 @@
 
 Postgres partitioning as easy as pie. Works great for both new and existing tables, with zero downtime and minimal app changes. No need to install anything on your database server. Archive older data on a rolling basis to keep your database size under control.
 
-:tangerine: Battle-tested at [Instacart](https://www.instacart.com/opensource)
-
-[![Build Status](https://github.com/ankane/pgslice/actions/workflows/build.yml/badge.svg)](https://github.com/ankane/pgslice/actions)
+**Note:** This is a TypeScript port of the [original Ruby-based pgslice](https://github.com/ankane/pgslice).
 
 ## Install
 
-pgslice is a command line tool. To install, run:
+pgslice is a command line tool. Requires Node.js 20+.
+
+To install globally:
 
 ```sh
-gem install pgslice
+npm install -g pgslice
 ```
 
-This will give you the `pgslice` command. If installation fails, you may need to install [dependencies](#dependencies).
+Or run directly with npx:
 
-You can also install it with [Homebrew](#homebrew) or [Docker](#docker).
+```sh
+npx pgslice <command>
+```
+
+This will give you the `pgslice` command.
 
 ## Global Options
 
@@ -31,65 +35,67 @@ All commands support these global options:
 
 2. Specify your database credentials
 
-  ```sh
-  export PGSLICE_URL=postgres://localhost/myapp_development
-  ```
+```sh
+export PGSLICE_URL=postgres://localhost/myapp_development
+```
 
 3. Create an intermediate table
 
-  ```sh
-  pgslice prep <table> <column> <period>
-  ```
+```sh
+pgslice prep <table> <column> <period>
+```
 
-  The column should be a `timestamp`, `timestamptz`, or `date` column and period can be `day`, `month`, or `year`.
+The column should be a `timestamp`, `timestamptz`, or `date` column and period can be `day`, `month`, or `year`.
 
-  This creates a partitioned table named `<table>_intermediate` using range partitioning.
+This creates a partitioned table named `<table>_intermediate` using range partitioning.
 
-  Options:
-  - `--no-partition`: Create a non-partitioned intermediate table (useful for one-off tasks)
-  - `--trigger-based`: Use trigger-based partitioning (for PostgreSQL 9.x)
+Options:
+
+- `--no-partition`: Create a non-partitioned intermediate table (useful for one-off tasks)
 
 4. Add partitions to the intermediate table
 
-  ```sh
-  pgslice add_partitions <table> --intermediate --past 3 --future 3
-  ```
+```sh
+pgslice add_partitions <table> --intermediate --past 3 --future 3
+```
 
-  Use the `--past` and `--future` options to control the number of partitions.
+Use the `--past` and `--future` options to control the number of partitions.
 
 5. Enable mirroring triggers for live data changes
 
-  ```sh
-  pgslice enable_mirroring <table>
-  ```
+```sh
+pgslice enable_mirroring <table>
+```
 
-  This enables triggers that automatically mirror INSERT, UPDATE, and DELETE operations from the original table to the intermediate table during the partitioning process. This ensures that any data changes made after you start the partitioning process are captured in both tables.
+This enables triggers that automatically mirror INSERT, UPDATE, and DELETE operations from the original table to the intermediate table during the partitioning process. This ensures that any data changes made after you start the partitioning process are captured in both tables.
 
-6. *Optional, for tables with data* - Fill the partitions in batches with data from the original table
+6. _Optional, for tables with data_ - Fill the partitions in batches with data from the original table
 
-  ```sh
-  pgslice fill <table>
-  ```
+```sh
+pgslice fill <table>
+```
 
-  Options:
-  - `--batch-size`: Number of rows per batch (default: `10000`)
-  - `--sleep`: Seconds to sleep between batches (default: `0`)
-  - `--swapped`: Fill from retired table to partitioned table (after swap)
-  - `--source-table`: Source table name (default: original table or retired table if `--swapped`)
-  - `--dest-table`: Destination table name (default: intermediate table or partitioned table if `--swapped`)
-  - `--start`: Primary key value to start from (numeric or ULID)
-  - `--where`: Additional WHERE conditions to filter rows
+Options:
 
-  To sync data across different databases, check out [pgsync](https://github.com/ankane/pgsync).
+- `--batch-size`: Number of rows per batch (default: `10000`)
+- `--sleep`: Seconds to sleep between batches (default: `0`)
+- `--swapped`: Fill from retired table to partitioned table (after swap)
+- `--source-table`: Source table name (default: original table or retired table if `--swapped`)
+- `--dest-table`: Destination table name (default: intermediate table or partitioned table if `--swapped`)
+- `--start`: Primary key value to start from (numeric or ULID)
+- `--where`: Additional WHERE conditions to filter rows
+
+To sync data across different databases, check out [pgsync](https://github.com/ankane/pgsync).
 
 7. Analyze tables
 
-  ```sh
-  pgslice analyze <table>
-  ```
+```sh
+pgslice analyze <table>
+```
 
-  Options:
-  - `--swapped`: Analyze the partitioned table (after swap)
+Options:
+
+- `--swapped`: Analyze the partitioned table (after swap)
 
 8. Sync/Validate the tables
 
@@ -102,6 +108,7 @@ pgslice synchronize <table> [options]
 ```
 
 Options:
+
 - `--source-table`: Source table to compare (default: `<table>`)
 - `--target-table`: Target table to compare (default: `<table>_intermediate`)
 - `--primary-key`: Primary key column name (default: detected from table)
@@ -113,22 +120,23 @@ Options:
 
 9. Swap the intermediate table with the original table
 
-  ```sh
-  pgslice swap <table>
-  ```
+```sh
+pgslice swap <table>
+```
 
-  The original table is renamed `<table>_retired` and the intermediate table is renamed `<table>`.
+The original table is renamed `<table>_retired` and the intermediate table is renamed `<table>`.
 
-  Options:
-  - `--lock-timeout`: Lock timeout for the swap operation (default: `5s`)
+Options:
+
+- `--lock-timeout`: Lock timeout for the swap operation (default: `5s`)
 
 10. Disable mirroring triggers
 
-  ```sh
-  pgslice disable_mirroring <table>
-  ```
+```sh
+pgslice disable_mirroring <table>
+```
 
-  After the swap, the original mirroring triggers are no longer needed since the tables have been swapped.
+After the swap, the original mirroring triggers are no longer needed since the tables have been swapped.
 
 11. Enable Reverse Mirroring (now-partitioned table to retired table)
 
@@ -144,24 +152,24 @@ pgslice enable_retired_mirroring <table>  # undo with pgslice disable_retired_mi
 
 This step should not be needed if you did the pgslice synchronize in step 8.
 
-  ```sh
-  pgslice fill <table> --swapped
-  ```
+```sh
+pgslice fill <table> --swapped
+```
 
 13. Disable retired mirroring triggers
 
-  ```sh
-  pgslice disable_retired_mirroring <table>
-  ```
+```sh
+pgslice disable_retired_mirroring <table>
+```
 
-  Once you're confident the retired table is no longer needed and you're ready to drop it, disable the retired mirroring triggers.
+Once you're confident the retired table is no longer needed and you're ready to drop it, disable the retired mirroring triggers.
 
 14. Back up the retired table with a tool like [pg_dump](https://www.postgresql.org/docs/current/static/app-pgdump.html) and drop it
 
-  ```sql
-  pg_dump -c -Fc -t <table>_retired $PGSLICE_URL > <table>_retired.dump
-  psql -c "DROP TABLE <table>_retired" $PGSLICE_URL
-  ```
+```sql
+pg_dump -c -Fc -t <table>_retired $PGSLICE_URL > <table>_retired.dump
+psql -c "DROP TABLE <table>_retired" $PGSLICE_URL
+```
 
 ## Sample Output
 
@@ -378,22 +386,6 @@ For this to be effective, ensure `constraint_exclusion` is set to `partition` (t
 SHOW constraint_exclusion;
 ```
 
-## Frameworks
-
-### Rails
-
-Specify the primary key for partitioned models to ensure it’s returned.
-
-```ruby
-class Visit < ApplicationRecord
-  self.primary_key = "id"
-end
-```
-
-### Other Frameworks
-
-Please submit a PR if additional configuration is needed.
-
 ## One Off Tasks
 
 You can also use pgslice to reduce the size of a table without partitioning by creating a new table, filling it with a subset of records, and swapping it in.
@@ -413,103 +405,6 @@ Triggers aren’t copied from the original table. You can set up triggers on the
 ## Data Protection
 
 Always make sure your [connection is secure](https://ankane.org/postgres-sslmode-explained) when connecting to a database over a network you don’t fully trust. Your best option is to connect over SSH or a VPN. Another option is to use `sslmode=verify-full`. If you don’t do this, your database credentials can be compromised.
-
-## Additional Installation Methods
-
-### Homebrew
-
-With Homebrew, you can use:
-
-```sh
-brew install pgslice
-```
-
-### Docker
-
-Get the [Docker image](https://hub.docker.com/r/ankane/pgslice) with:
-
-```sh
-docker pull ankane/pgslice
-alias pgslice="docker run --rm -e PGSLICE_URL ankane/pgslice"
-```
-
-This will give you the `pgslice` command.
-
-## Dependencies
-
-If installation fails, your system may be missing Ruby or libpq.
-
-On Mac, run:
-
-```sh
-brew install libpq
-```
-
-On Ubuntu, run:
-
-```sh
-sudo apt-get install ruby-dev libpq-dev build-essential
-```
-
-## Upgrading
-
-Run:
-
-```sh
-gem install pgslice
-```
-
-To use master, run:
-
-```sh
-gem install specific_install
-gem specific_install https://github.com/ankane/pgslice.git
-```
-
-## Creating Releases
-
-Releases are automatically created when a version tag is pushed to the repository. The release workflow builds the gem and attaches it to a GitHub release.
-
-### Steps to Create a Release
-
-1. Create a new branch with name `v0.7.1.workos3`
-
-2. Update the version in `lib/pgslice/version.rb`:
-   ```ruby
-   VERSION = "0.7.1.workos3"
-   ```
-
-3. Commit and push the version change:
-   ```sh
-   git add lib/pgslice/version.rb
-   git commit -m "Bump version to v0.7.1.workos3"
-   git push
-   ```
-
-4. Start a PR, get it reviewed and merged:
-![Pull Request Example](docs/pr.png)
-![Commit Example](docs/commit.png)
-
-
-5. Create a release through github UI:
-
-![Draft a new release](docs/draft-release.png)
-
-6. Choose to create a new tag
-
-![Create a new tag](docs/new-tag.png)
-![Create new tag on publish](docs/new-tag-publish.png)
-
-7. Make sure to match version number with tag and hit generate release notes
-
-![Prepare release notes](docs/release-notes.png)
-
-8. Publish
-
-![Prepare release notes](docs/publish.png)
-
-
-The release workflow is configured in `.github/workflows/release.yml`.
 
 ## Reference
 
@@ -541,16 +436,22 @@ To get started with development:
 ```sh
 git clone https://github.com/ankane/pgslice.git
 cd pgslice
-bundle install
-createdb pgslice_test
-bundle exec rake test
+npm install
+npm run build
+npm test
+```
+
+To format code:
+
+```sh
+npm run format
 ```
 
 To test against different versions of Postgres with Docker, use:
 
 ```sh
 docker run -p=8000:5432 postgres:16
-TZ=Etc/UTC PGSLICE_URL=postgres://postgres@localhost:8000/postgres bundle exec rake
+PGSLICE_URL=postgres://postgres@localhost:8000/postgres npm test
 ```
 
 On Mac, you must use [Docker Desktop](https://www.docker.com/products/docker-desktop/) for the port mapping to localhost to work.
