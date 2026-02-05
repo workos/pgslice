@@ -4,12 +4,13 @@ import { Table } from "./table.js";
 import { sql } from "./sql-utils.js";
 
 export class AdvisoryLockError extends Error {
+  override name = "AdvisoryLockError";
+
   constructor(table: Table, operation: string) {
     super(
       `Could not acquire advisory lock for "${operation}" on table "${table.toString()}". ` +
         `Another pgslice operation may be in progress.`,
     );
-    this.name = "AdvisoryLockError";
   }
 }
 
