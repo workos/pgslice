@@ -83,8 +83,13 @@ export abstract class AdvisoryLock {
     connection: CommonQueryMethods,
     key: bigint,
   ): Promise<void> {
-    await connection.query(
-      sql.typeAlias("void")`SELECT pg_advisory_unlock(${key})`,
+    const { acquired } = await connection.one(
+      sql.type(
+        z.object({ acquired: z.boolean() }),
+      )`SELECT pg_advisory_unlock(${key}) AS acquired`,
     );
+    if (!acquired) {
+      throw new Error("Attempted to release lock that was never held.");
+    }
   }
 }
