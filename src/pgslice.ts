@@ -35,8 +35,6 @@ import { Swapper } from "./swapper.js";
 import { AdvisoryLock } from "./advisory-lock.js";
 
 interface PgsliceOptions {
-  dryRun?: boolean;
-
   /**
    * Whether to use Postgres advisory locks to prevent concurrent operations
    * on the same table for the same operation. Defaults to true.
@@ -46,11 +44,9 @@ interface PgsliceOptions {
 
 export class Pgslice {
   #pool: DatabasePool | null = null;
-  #dryRun: boolean;
   #advisoryLocks: boolean;
 
   constructor(pool: DatabasePool, options: PgsliceOptions) {
-    this.#dryRun = options.dryRun ?? false;
     this.#advisoryLocks = options.advisoryLocks ?? true;
     this.#pool = pool;
   }
@@ -88,10 +84,6 @@ export class Pgslice {
   async start<T>(
     handler: (transaction: DatabasePoolConnection) => Promise<T>,
   ): Promise<T> {
-    if (this.#dryRun) {
-      throw new Error("Dry run not yet supported.");
-    }
-
     return this.pool.connect(handler);
   }
 
