@@ -39,6 +39,10 @@ export class SynchronizeCommand extends BaseCommand {
     ],
   });
 
+  dryRun = Option.Boolean("--dry-run", false, {
+    description: "Print statements without executing",
+  });
+
   table = Option.String({ required: true, name: "table" });
 
   start = Option.String("--start", {

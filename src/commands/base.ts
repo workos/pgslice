@@ -11,10 +11,6 @@ export abstract class BaseCommand extends Command<Context> {
     required: false,
   });
 
-  dryRun = Option.Boolean("--dry-run", false, {
-    description: "Print statements without executing",
-  });
-
   protected getDatabaseUrl(): string {
     const url = this.url ?? process.env.PGSLICE_URL;
     if (!url) {
@@ -27,9 +23,6 @@ export abstract class BaseCommand extends Command<Context> {
     try {
       this.context.pgslice ??= await Pgslice.connect(
         new URL(this.getDatabaseUrl()),
-        {
-          dryRun: this.dryRun,
-        },
       );
 
       await this.perform(this.context.pgslice);
