@@ -1,7 +1,6 @@
 import { CommonQueryMethods, sql } from "slonik";
 import { z } from "zod";
-import { Table } from "./table.js";
-import { advanceDate, parsePartitionDate } from "./date-ranges.js";
+import { Table, resolvePartitionContext, transformIdValue } from "./table.js";
 import type {
   FillBatchResult,
   FillOptions,
@@ -14,29 +13,6 @@ import { formatDateForSql } from "./sql-utils.js";
  * Zod schema for validating ID values from the database.
  */
 const idValueSchema = z.union([z.bigint(), z.number(), z.string()]).nullable();
-
-/**
- * Transforms a raw ID value from the database into the proper IdValue type.
- * Numbers and numeric strings become bigint, ULID strings stay as strings.
- */
-function transformIdValue(
-  val: bigint | number | string | null,
-): IdValue | null {
-  if (val === null) {
-    return null;
-  }
-  if (typeof val === "bigint") {
-    return val;
-  }
-  if (typeof val === "number") {
-    return BigInt(val);
-  }
-  // val is string - check if it's a numeric string or ULID
-  if (/^\d+$/.test(val)) {
-    return BigInt(val);
-  }
-  return val;
-}
 
 export interface FillerOptions {
   source: Table;
@@ -97,42 +73,15 @@ export class Filler {
       throw new Error(`Table not found: ${destTable.toString()}`);
     }
 
-    // Get partition settings from dest table for time filtering
-    const settings = await destTable.fetchSettings(tx);
-
-    // Determine time filter if dest is partitioned
-    let timeFilter: TimeFilter | undefined;
-    if (settings) {
-      const partitions = await destTable.partitions(tx);
-      if (partitions.length > 0) {
-        const firstPartition = partitions[0];
-        const lastPartition = partitions[partitions.length - 1];
-
-        const startingTime = parsePartitionDate(
-          firstPartition.name,
-          settings.period,
-        );
-        const lastPartitionDate = parsePartitionDate(
-          lastPartition.name,
-          settings.period,
-        );
-        const endingTime = advanceDate(lastPartitionDate, settings.period, 1);
-
-        timeFilter = {
-          column: settings.column,
-          cast: settings.cast,
-          startingTime,
-          endingTime,
-        };
-      }
-    }
+    const { settings, partitions, timeFilter } = await resolvePartitionContext(
+      tx,
+      destTable,
+    );
 
     // Determine which table to get the schema (columns, primary key) from
     let schemaTable: Table;
-    if (settings) {
-      const partitions = await destTable.partitions(tx);
-      schemaTable =
-        partitions.length > 0 ? partitions[partitions.length - 1] : table;
+    if (settings && partitions.length > 0) {
+      schemaTable = partitions[partitions.length - 1];
     } else {
       schemaTable = table;
     }
