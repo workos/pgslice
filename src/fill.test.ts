@@ -279,6 +279,57 @@ describe("Pgslice.fill", () => {
     expect(count.count).toBe(3);
   });
 
+  test("scopes to partition range on first fill", async ({
+    pgslice,
+    transaction,
+  }) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 0, 15)));
+
+    try {
+      await transaction.query(sql.unsafe`
+        CREATE TABLE posts (
+          id BIGSERIAL PRIMARY KEY,
+          created_at DATE NOT NULL,
+          name TEXT
+        )
+      `);
+      await transaction.query(sql.unsafe`
+        INSERT INTO posts (created_at, name) VALUES
+          ('2026-01-10', 'in-range'),
+          ('2025-12-15', 'out-of-range')
+      `);
+
+      await pgslice.prep(transaction, {
+        table: "posts",
+        column: "created_at",
+        period: "month",
+        partition: true,
+      });
+      await pgslice.addPartitions(transaction, {
+        table: "posts",
+        intermediate: true,
+        past: 0,
+        future: 0,
+      });
+
+      for await (const _batch of pgslice.fill(transaction, {
+        table: "posts",
+      })) {
+        // consume batches
+      }
+
+      const rows = await transaction.any(
+        sql.type(z.object({ name: z.string() }))`
+          SELECT name FROM posts_intermediate ORDER BY id ASC
+        `,
+      );
+      expect(rows.map((row) => row.name)).toEqual(["in-range"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("returns nothing to fill for empty source", async ({
     pgslice,
     transaction,

@@ -1,4 +1,4 @@
-import { describe, expect } from "vitest";
+import { describe, expect, vi } from "vitest";
 import { sql } from "slonik";
 import { z } from "zod";
 
@@ -287,6 +287,60 @@ describe("Synchronizer", () => {
 
       // Should have synchronized 3 rows (ids 3, 4, 5)
       expect(batches).toEqual([expect.objectContaining({ rowsInserted: 3 })]);
+    });
+
+    test("defaults to partition range when start is omitted", async ({
+      transaction,
+      pgslice,
+    }) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(Date.UTC(2026, 0, 15)));
+
+      try {
+        await transaction.query(sql.unsafe`
+        CREATE TABLE posts (
+          id BIGSERIAL PRIMARY KEY,
+          created_at DATE NOT NULL,
+          name TEXT
+        )
+      `);
+        await transaction.query(sql.unsafe`
+        INSERT INTO posts (created_at, name) VALUES
+          ('2026-01-10', 'in-range'),
+          ('2025-12-15', 'out-of-range')
+      `);
+
+        await pgslice.prep(transaction, {
+          table: "posts",
+          column: "created_at",
+          period: "month",
+          partition: true,
+        });
+        await pgslice.addPartitions(transaction, {
+          table: "posts",
+          intermediate: true,
+          past: 0,
+          future: 0,
+        });
+
+        const synchronizer = await Synchronizer.init(transaction, {
+          table: "posts",
+          windowSize: 10,
+        });
+
+        for await (const _batch of synchronizer.synchronize(transaction)) {
+          // consume batches
+        }
+
+        const rows = await transaction.any(
+          sql.type(z.object({ name: z.string() }))`
+          SELECT name FROM posts_intermediate ORDER BY id ASC
+        `,
+        );
+        expect(rows.map((row) => row.name)).toEqual(["in-range"]);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     test("reports matching rows", async ({ transaction }) => {

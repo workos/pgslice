@@ -5,7 +5,14 @@ import {
   IdentifierSqlToken,
 } from "slonik";
 import { z } from "zod";
-import type { Cast, ColumnInfo, IdValue, SequenceInfo } from "./types.js";
+import { advanceDate, parsePartitionDate } from "./date-ranges.js";
+import type {
+  Cast,
+  ColumnInfo,
+  IdValue,
+  SequenceInfo,
+  TimeFilter,
+} from "./types.js";
 import { TableSettings } from "./table-settings.js";
 import { formatDateForSql } from "./sql-utils.js";
 
@@ -20,7 +27,11 @@ const idValueSchema = z.union([z.bigint(), z.number(), z.string()]).nullable();
  * Transforms a raw ID value from the database into the proper IdValue type.
  * Numbers and numeric strings become bigint, ULID strings stay as strings.
  */
-function transformIdValue(
+export function transformIdValue(val: bigint | number | string): IdValue;
+export function transformIdValue(
+  val: bigint | number | string | null,
+): IdValue | null;
+export function transformIdValue(
   val: bigint | number | string | null,
 ): IdValue | null {
   if (val === null) {
@@ -53,6 +64,37 @@ function dataTypeToCast(dataType: string): Cast | null {
     default:
       return null;
   }
+}
+
+function derivePartitionTimeFilter(
+  settings: TableSettings,
+  partitions: Table[],
+): TimeFilter | undefined {
+  if (partitions.length === 0) {
+    return undefined;
+  }
+
+  const firstPartition = partitions[0];
+  const lastPartition = partitions[partitions.length - 1];
+  const startingTime = parsePartitionDate(firstPartition.name, settings.period);
+  const lastPartitionDate = parsePartitionDate(
+    lastPartition.name,
+    settings.period,
+  );
+  const endingTime = advanceDate(lastPartitionDate, settings.period, 1);
+
+  return {
+    column: settings.column,
+    cast: settings.cast,
+    startingTime,
+    endingTime,
+  };
+}
+
+export interface PartitionContext {
+  settings: TableSettings | null;
+  partitions: Table[];
+  timeFilter?: TimeFilter;
 }
 
 /**
@@ -307,7 +349,7 @@ export class Table {
   /**
    * Gets all child partitions of this table.
    */
-  async partitions(tx: DatabaseTransactionConnection): Promise<Table[]> {
+  async partitions(tx: CommonQueryMethods): Promise<Table[]> {
     const result = await tx.any(
       sql.type(z.object({ schema: z.string(), name: z.string() }))`
         SELECT
@@ -446,5 +488,24 @@ export class Table {
       sequenceName: row.sequence_name,
       relatedColumn: row.related_column,
     }));
+  }
+
+  async partitionContext(tx: CommonQueryMethods): Promise<PartitionContext> {
+    const settings = await this.fetchSettings(tx);
+    if (!settings) {
+      return { settings: null, partitions: [], timeFilter: undefined };
+    }
+
+    const partitions = await this.partitions(tx);
+    const timeFilter = derivePartitionTimeFilter(settings, partitions);
+
+    return { settings, partitions, timeFilter };
+  }
+
+  async partitionTimeFilter(
+    tx: CommonQueryMethods,
+  ): Promise<TimeFilter | undefined> {
+    const { timeFilter } = await this.partitionContext(tx);
+    return timeFilter;
   }
 }

@@ -1,32 +1,15 @@
 import { CommonQueryMethods } from "slonik";
 import { z } from "zod";
 
-import { Table } from "./table.js";
-import { sql, valueToSql } from "./sql-utils.js";
+import { Table, transformIdValue } from "./table.js";
+import { formatDateForSql, sql, valueToSql } from "./sql-utils.js";
 import type {
   ColumnInfo,
   IdValue,
   SynchronizeBatchResult,
   SynchronizeOptions,
+  TimeFilter,
 } from "./types.js";
-
-/**
- * Transforms a raw ID value from the database into the proper IdValue type.
- * Numbers and numeric strings become bigint, ULID strings stay as strings.
- */
-function transformIdValue(val: bigint | number | string): IdValue {
-  if (typeof val === "bigint") {
-    return val;
-  }
-  if (typeof val === "number") {
-    return BigInt(val);
-  }
-  // val is string - check if it's a numeric string or ULID
-  if (/^\d+$/.test(val)) {
-    return BigInt(val);
-  }
-  return val;
-}
 
 /**
  * Zod schema for a row from the database. All values are nullable.
@@ -41,6 +24,7 @@ interface SynchronizerOptions {
   windowSize: number;
   startingId: IdValue;
   dryRun: boolean;
+  timeFilter?: TimeFilter;
 }
 
 /**
@@ -55,6 +39,7 @@ export class Synchronizer {
   readonly #windowSize: number;
   readonly #startingId: IdValue;
   readonly #dryRun: boolean;
+  readonly #timeFilter?: TimeFilter;
 
   private constructor(options: SynchronizerOptions) {
     this.#source = options.source;
@@ -64,6 +49,7 @@ export class Synchronizer {
     this.#windowSize = options.windowSize;
     this.#startingId = options.startingId;
     this.#dryRun = options.dryRun;
+    this.#timeFilter = options.timeFilter;
   }
 
   get source(): Table {
@@ -117,11 +103,22 @@ export class Synchronizer {
 
     const primaryKeyColumn = await sourceTable.primaryKey(tx);
 
+    const timeFilter = await targetTable.partitionTimeFilter(tx);
+
     let startingId: IdValue;
     if (options.start !== undefined) {
       startingId = transformIdValue(options.start);
     } else {
-      const minId = await sourceTable.minId(tx);
+      const minId = await sourceTable.minId(
+        tx,
+        timeFilter
+          ? {
+              column: timeFilter.column,
+              cast: timeFilter.cast,
+              startingTime: timeFilter.startingTime,
+            }
+          : undefined,
+      );
       if (minId === null) {
         throw new Error("No rows found in source table");
       }
@@ -136,6 +133,7 @@ export class Synchronizer {
       windowSize: options.windowSize ?? 1000,
       startingId,
       dryRun: options.dryRun ?? false,
+      timeFilter,
     });
   }
 
@@ -274,12 +272,30 @@ export class Synchronizer {
     );
 
     const operator = includeStart ? sql.fragment`>=` : sql.fragment`>`;
+    const conditions = [sql.fragment`${pkCol} ${operator} ${startingId}`];
+
+    if (this.#timeFilter) {
+      const timeCol = sql.identifier([this.#timeFilter.column]);
+      const startDate = formatDateForSql(
+        this.#timeFilter.startingTime,
+        this.#timeFilter.cast,
+      );
+      const endDate = formatDateForSql(
+        this.#timeFilter.endingTime,
+        this.#timeFilter.cast,
+      );
+      conditions.push(
+        sql.fragment`${timeCol} >= ${startDate} AND ${timeCol} < ${endDate}`,
+      );
+    }
+
+    const whereClause = sql.join(conditions, sql.fragment` AND `);
 
     const result = await connection.any(
       sql.type(rowSchema)`
         SELECT ${columnList}
         FROM ${table.sqlIdentifier}
-        WHERE ${pkCol} ${operator} ${startingId}
+        WHERE ${whereClause}
         ORDER BY ${pkCol}
         LIMIT ${this.#windowSize}
       `,
