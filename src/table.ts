@@ -97,28 +97,6 @@ export interface PartitionContext {
   timeFilter?: TimeFilter;
 }
 
-export async function resolvePartitionContext(
-  tx: CommonQueryMethods,
-  targetTable: Table,
-): Promise<PartitionContext> {
-  const settings = await targetTable.fetchSettings(tx);
-  if (!settings) {
-    return { settings: null, partitions: [], timeFilter: undefined };
-  }
-
-  const partitions = await targetTable.partitions(tx);
-  const timeFilter = derivePartitionTimeFilter(settings, partitions);
-
-  return { settings, partitions, timeFilter };
-}
-
-export async function resolvePartitionTimeFilter(
-  tx: CommonQueryMethods,
-  targetTable: Table,
-): Promise<TimeFilter | undefined> {
-  const { timeFilter } = await resolvePartitionContext(tx, targetTable);
-  return timeFilter;
-}
 
 /**
  * Gets the server version number.
@@ -511,5 +489,24 @@ export class Table {
       sequenceName: row.sequence_name,
       relatedColumn: row.related_column,
     }));
+  }
+
+  async partitionContext(tx: CommonQueryMethods): Promise<PartitionContext> {
+    const settings = await this.fetchSettings(tx);
+    if (!settings) {
+      return { settings: null, partitions: [], timeFilter: undefined };
+    }
+
+    const partitions = await this.partitions(tx);
+    const timeFilter = derivePartitionTimeFilter(settings, partitions);
+
+    return { settings, partitions, timeFilter };
+  }
+
+  async partitionTimeFilter(
+    tx: CommonQueryMethods,
+  ): Promise<TimeFilter | undefined> {
+    const { timeFilter } = await this.partitionContext(tx);
+    return timeFilter;
   }
 }

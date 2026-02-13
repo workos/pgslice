@@ -1,11 +1,7 @@
 import { CommonQueryMethods } from "slonik";
 import { z } from "zod";
 
-import {
-  Table,
-  resolvePartitionTimeFilter,
-  transformIdValue,
-} from "./table.js";
+import { Table, transformIdValue } from "./table.js";
 import { formatDateForSql, sql, valueToSql } from "./sql-utils.js";
 import type {
   ColumnInfo,
@@ -107,7 +103,7 @@ export class Synchronizer {
 
     const primaryKeyColumn = await sourceTable.primaryKey(tx);
 
-    const timeFilter = await resolvePartitionTimeFilter(tx, targetTable);
+    const timeFilter = await targetTable.partitionTimeFilter(tx);
 
     let startingId: IdValue;
     if (options.start !== undefined) {

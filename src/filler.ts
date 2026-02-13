@@ -1,6 +1,6 @@
 import { CommonQueryMethods, sql } from "slonik";
 import { z } from "zod";
-import { Table, resolvePartitionContext, transformIdValue } from "./table.js";
+import { Table, transformIdValue } from "./table.js";
 import type {
   FillBatchResult,
   FillOptions,
@@ -73,10 +73,8 @@ export class Filler {
       throw new Error(`Table not found: ${destTable.toString()}`);
     }
 
-    const { settings, partitions, timeFilter } = await resolvePartitionContext(
-      tx,
-      destTable,
-    );
+    const { settings, partitions, timeFilter } =
+      await destTable.partitionContext(tx);
 
     // Determine which table to get the schema (columns, primary key) from
     let schemaTable: Table;
