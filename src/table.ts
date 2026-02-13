@@ -97,7 +97,6 @@ export interface PartitionContext {
   timeFilter?: TimeFilter;
 }
 
-
 /**
  * Gets the server version number.
  */
