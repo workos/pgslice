@@ -437,17 +437,23 @@ export class Table {
     const col = sql.identifier([await this.primaryKey(tx)]);
 
     let whereClause = sql.fragment`1 = 1`;
+    const orderByClauses = [sql.fragment`${col} ASC`];
+
     if (options?.column && options.cast && options.startingTime) {
       const timeCol = sql.identifier([options.column]);
       const startDate = formatDateForSql(options.startingTime, options.cast);
+
       whereClause = sql.fragment`${timeCol} >= ${startDate}`;
+      orderByClauses.unshift(sql.fragment`${timeCol} ASC`);
     }
 
     const result = await tx.maybeOne(
       sql.type(z.object({ min_id: idValueSchema }))`
-        SELECT MIN(${col}) AS min_id
+        SELECT ${col} AS min_id
         FROM ${this.sqlIdentifier}
         WHERE ${whereClause}
+        ORDER BY ${sql.join(orderByClauses, sql.fragment`, `)}
+        LIMIT 1
       `,
     );
 
