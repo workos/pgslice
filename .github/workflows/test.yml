@@ -17,10 +17,7 @@ jobs:
     name: Lint and build
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
+      - uses: jdx/mise-action@v3
       - run: npm ci
       - run: npm run build
       - run: npm run format:check
@@ -38,10 +35,7 @@ jobs:
         postgres: [13, 15, 17, 18]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
+      - uses: jdx/mise-action@v3
       - uses: ankane/setup-postgres@v1
         with:
           postgres-version: ${{ matrix.postgres }}
