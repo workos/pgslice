@@ -178,6 +178,42 @@ describe("Filler", () => {
       );
       expect(existing.name).toBe("existing");
     });
+
+    test("copies remaining rows when first batch is all duplicates", async ({
+      transaction,
+    }) => {
+      await transaction.query(sql.unsafe`
+        CREATE TABLE posts (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
+      await transaction.query(sql.unsafe`
+        CREATE TABLE posts_intermediate (id BIGSERIAL PRIMARY KEY, name TEXT)
+      `);
+      await transaction.query(sql.unsafe`
+        INSERT INTO posts (name)
+        SELECT 'item_' || i FROM generate_series(1, 25) AS i
+      `);
+      // Simulate a partial fill: first 10 rows already in dest
+      await transaction.query(sql.unsafe`
+        INSERT INTO posts_intermediate (id, name)
+        SELECT id, name FROM posts WHERE id <= 10
+      `);
+
+      const filler = await Filler.init(transaction, {
+        table: "posts",
+        batchSize: 10,
+      });
+
+      for await (const _batch of filler.fill(transaction)) {
+        // consume batches
+      }
+
+      const count = await transaction.one(
+        sql.type(z.object({ count: z.coerce.number() }))`
+          SELECT COUNT(*)::int FROM posts_intermediate
+        `,
+      );
+      expect(count.count).toBe(25);
+    });
   });
 });
 
@@ -330,6 +366,62 @@ describe("Pgslice.fill", () => {
     }
   });
 
+  test("fills rows with non-monotonic PK and created_at", async ({
+    pgslice,
+    transaction,
+  }) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 0, 15)));
+
+    try {
+      // PK order doesn't match created_at order: id=1 has a later date than id=2
+      await transaction.query(sql.unsafe`
+        CREATE TABLE posts (
+          id BIGSERIAL PRIMARY KEY,
+          created_at DATE NOT NULL,
+          name TEXT
+        )
+      `);
+      await transaction.query(sql.unsafe`
+        INSERT INTO posts (id, created_at, name) VALUES
+          (1, '2026-01-20', 'later-date-lower-pk'),
+          (2, '2026-01-10', 'earlier-date-higher-pk')
+      `);
+
+      await pgslice.prep(transaction, {
+        table: "posts",
+        column: "created_at",
+        period: "month",
+        partition: true,
+      });
+      await pgslice.addPartitions(transaction, {
+        table: "posts",
+        intermediate: true,
+        past: 0,
+        future: 0,
+      });
+
+      for await (const _batch of pgslice.fill(transaction, {
+        table: "posts",
+      })) {
+        // consume batches
+      }
+
+      const rows = await transaction.any(
+        sql.type(z.object({ name: z.string() }))`
+          SELECT name FROM posts_intermediate ORDER BY id ASC
+        `,
+      );
+      // Both rows should be filled regardless of PK/time ordering
+      expect(rows.map((row) => row.name)).toEqual([
+        "later-date-lower-pk",
+        "earlier-date-higher-pk",
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("returns nothing to fill for empty source", async ({
     pgslice,
     transaction,
@@ -419,6 +511,73 @@ describe("Pgslice.fill", () => {
     })().catch((e) => e);
 
     expect(error.message).toBe("Table not found: public.posts_intermediate");
+  });
+
+  test("fills old rows when dest has recent mirrored row", async ({
+    pgslice,
+    transaction,
+  }) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 0, 15)));
+
+    try {
+      // Create source table with data spanning the partition range
+      await transaction.query(sql.unsafe`
+        CREATE TABLE posts (
+          id BIGSERIAL PRIMARY KEY,
+          created_at DATE NOT NULL,
+          name TEXT
+        )
+      `);
+      await transaction.query(sql.unsafe`
+        INSERT INTO posts (created_at, name) VALUES
+          ('2026-01-01', 'old-1'),
+          ('2026-01-02', 'old-2'),
+          ('2026-01-03', 'old-3'),
+          ('2026-01-10', 'recent-mirrored')
+      `);
+
+      // Setup partitioned intermediate table
+      await pgslice.prep(transaction, {
+        table: "posts",
+        column: "created_at",
+        period: "month",
+        partition: true,
+      });
+      await pgslice.addPartitions(transaction, {
+        table: "posts",
+        intermediate: true,
+        past: 0,
+        future: 0,
+      });
+
+      // Simulate mirroring: a recent row was copied to dest by the trigger
+      // BEFORE fill runs. This sets destMaxId to 4.
+      await transaction.query(sql.unsafe`
+        INSERT INTO posts_intermediate (id, created_at, name)
+        VALUES (4, '2026-01-10', 'recent-mirrored')
+      `);
+
+      // Run fill WITHOUT --start.
+      // Bug: fill sees destMaxId=4, queries "WHERE id > 4", finds nothing,
+      // returns "nothing to fill". Old rows (id 1,2,3) are never copied.
+      const batches = [];
+      for await (const batch of pgslice.fill(transaction, {
+        table: "posts",
+      })) {
+        batches.push(batch);
+      }
+
+      // All 4 source rows should be in the dest
+      const count = await transaction.one(
+        sql.type(z.object({ count: z.coerce.number() }))`
+          SELECT COUNT(*)::int FROM posts_intermediate
+        `,
+      );
+      expect(count.count).toBe(4);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("throws for table without primary key", async ({

@@ -437,22 +437,24 @@ export class Table {
     const col = sql.identifier([await this.primaryKey(tx)]);
 
     let whereClause = sql.fragment`1 = 1`;
-    const orderByClauses = [sql.fragment`${col} ASC`];
 
     if (options?.column && options.cast && options.startingTime) {
       const timeCol = sql.identifier([options.column]);
       const startDate = formatDateForSql(options.startingTime, options.cast);
 
       whereClause = sql.fragment`${timeCol} >= ${startDate}`;
-      orderByClauses.unshift(sql.fragment`${timeCol} ASC`);
     }
 
+    // Order by PK only (not time column) so we get the smallest PK in the
+    // time range. Ordering by time first would miss rows with a smaller PK
+    // but later timestamp when PKs aren't monotonic with the partition column.
+    // LIMIT 1 lets Postgres use an index scan on the PK.
     const result = await tx.maybeOne(
       sql.type(z.object({ min_id: idValueSchema }))`
         SELECT ${col} AS min_id
         FROM ${this.sqlIdentifier}
         WHERE ${whereClause}
-        ORDER BY ${sql.join(orderByClauses, sql.fragment`, `)}
+        ORDER BY ${col} ASC
         LIMIT 1
       `,
     );

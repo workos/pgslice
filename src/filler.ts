@@ -108,9 +108,20 @@ export class Filler {
       });
       startingId = destMaxId ?? undefined;
     } else {
-      // Get max from dest - resume from where we left off (exclusive)
-      const destMaxId = await destTable.maxId(tx);
-      startingId = destMaxId ?? undefined;
+      // Start from the source's min PK (inclusive) so we don't skip old rows
+      // when the dest already has mirrored data with a high ID.
+      const minId = await sourceTable.minId(
+        tx,
+        timeFilter
+          ? {
+              column: timeFilter.column,
+              cast: timeFilter.cast,
+              startingTime: timeFilter.startingTime,
+            }
+          : undefined,
+      );
+      startingId = minId ?? undefined;
+      includeStart = true;
     }
 
     return new Filler({
@@ -150,8 +161,8 @@ export class Filler {
         currentId = result.endId;
       }
 
-      // Stop when no rows were inserted (source exhausted)
-      if (result.rowsInserted === 0) {
+      // Stop when no source rows remain
+      if (result.sourceCount === 0) {
         break;
       }
 
@@ -167,6 +178,7 @@ export class Filler {
     currentId: IdValue | null,
     includeStart: boolean,
   ): Promise<{
+    sourceCount: number;
     rowsInserted: number;
     startId: IdValue | null;
     endId: IdValue | null;
@@ -214,31 +226,42 @@ export class Filler {
       sql.fragment`, `,
     );
 
-    // Build and execute the CTE-based INSERT query
+    // Use a two-CTE approach: source_batch tracks progress independently of
+    // inserted rows. This prevents early termination when an entire batch
+    // consists of rows already in dest (e.g. from mirroring or a prior partial fill).
     const result = await connection.one(
       sql.type(
         z.object({
-          max_id: idValueSchema,
+          source_max_id: idValueSchema,
+          source_count: z.coerce.number(),
           count: z.coerce.number(),
         }),
       )`
-        WITH batch AS (
-          INSERT INTO ${this.#dest.sqlIdentifier} (${columnList})
+        WITH source_batch AS (
           SELECT ${columnList}
           FROM ${this.#source.sqlIdentifier}
           WHERE ${whereClause}
           ORDER BY ${pkCol}
           LIMIT ${this.#batchSize}
+        ),
+        inserted AS (
+          INSERT INTO ${this.#dest.sqlIdentifier} (${columnList})
+          SELECT ${columnList}
+          FROM source_batch
           ON CONFLICT DO NOTHING
           RETURNING ${pkCol}
         )
-        SELECT MAX(${pkCol}) AS max_id, COUNT(*)::int AS count FROM batch
+        SELECT
+          (SELECT MAX(${pkCol}) FROM source_batch) AS source_max_id,
+          (SELECT COUNT(*)::int FROM source_batch) AS source_count,
+          (SELECT COUNT(*)::int FROM inserted) AS count
       `,
     );
 
-    const endId = transformIdValue(result.max_id);
+    const endId = transformIdValue(result.source_max_id);
 
     return {
+      sourceCount: result.source_count,
       rowsInserted: result.count,
       startId,
       endId,

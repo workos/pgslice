@@ -116,6 +116,7 @@ export interface FillOptions {
  */
 export interface FillBatchResult {
   batchNumber: number;
+  sourceCount: number;
   rowsInserted: number;
   startId: IdValue | null;
   endId: IdValue | null;
