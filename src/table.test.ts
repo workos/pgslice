@@ -250,6 +250,85 @@ describe("Table.minId", () => {
 
     expect(minId).toBe(2n);
   });
+
+  test("respects time filter for timestamptz column", async ({
+    transaction,
+  }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table (
+        id BIGSERIAL PRIMARY KEY,
+        created_at TIMESTAMPTZ NOT NULL,
+        name TEXT
+      )
+    `);
+    await transaction.query(sql.unsafe`
+      INSERT INTO test_table (created_at, name) VALUES
+        ('2024-01-01 00:00:00 UTC', 'old'),
+        ('2024-06-01 00:00:00 UTC', 'mid'),
+        ('2024-12-01 00:00:00 UTC', 'new')
+    `);
+
+    const table = Table.parse("test_table");
+    const minId = await table.minId(transaction, {
+      column: "created_at",
+      cast: "timestamptz",
+      startingTime: new Date("2024-06-01T00:00:00Z"),
+    });
+
+    expect(minId).toBe(2n);
+  });
+
+  test("returns null when time filter excludes all rows", async ({
+    transaction,
+  }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table (
+        id BIGSERIAL PRIMARY KEY,
+        created_at DATE NOT NULL,
+        name TEXT
+      )
+    `);
+    await transaction.query(sql.unsafe`
+      INSERT INTO test_table (created_at, name) VALUES
+        ('2024-01-01', 'old'),
+        ('2024-03-01', 'mid'),
+        ('2024-06-01', 'new')
+    `);
+
+    const table = Table.parse("test_table");
+    const minId = await table.minId(transaction, {
+      column: "created_at",
+      cast: "date",
+      startingTime: new Date("2025-01-01"),
+    });
+
+    expect(minId).toBeNull();
+  });
+
+  test("respects time filter with string IDs", async ({ transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE test_table (
+        id TEXT PRIMARY KEY,
+        created_at DATE NOT NULL,
+        name TEXT
+      )
+    `);
+    await transaction.query(sql.unsafe`
+      INSERT INTO test_table (id, created_at, name) VALUES
+        ('01ARZ3NDEKTSV4RRFFQ69G5FAA', '2024-01-01', 'old'),
+        ('01ARZ3NDEKTSV4RRFFQ69G5FAM', '2024-06-01', 'mid'),
+        ('01ARZ3NDEKTSV4RRFFQ69G5FAV', '2024-12-01', 'new')
+    `);
+
+    const table = Table.parse("test_table");
+    const minId = await table.minId(transaction, {
+      column: "created_at",
+      cast: "date",
+      startingTime: new Date("2024-06-01"),
+    });
+
+    expect(minId).toBe("01ARZ3NDEKTSV4RRFFQ69G5FAM");
+  });
 });
 
 describe("Table.columns", () => {
