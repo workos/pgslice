@@ -14,8 +14,6 @@ export const sql = createSqlTag({
   },
 });
 
-export const STARTUP_STATEMENT_TIMEOUT_MS = 5 * 60 * 1000;
-
 /**
  * Creates a SQL fragment from a raw string.
  * This is useful for dynamically building SQL queries where the content

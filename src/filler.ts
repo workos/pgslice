@@ -7,11 +7,7 @@ import type {
   IdValue,
   TimeFilter,
 } from "./types.js";
-import {
-  formatDateForSql,
-  STARTUP_STATEMENT_TIMEOUT_MS,
-  withStatementTimeout,
-} from "./sql-utils.js";
+import { formatDateForSql } from "./sql-utils.js";
 
 /**
  * Zod schema for validating ID values from the database.
@@ -114,20 +110,15 @@ export class Filler {
     } else {
       // Start from the source's min PK (inclusive) so we don't skip old rows
       // when the dest already has mirrored data with a high ID.
-      const minId = await withStatementTimeout(
+      const minId = await sourceTable.minId(
         tx,
-        STARTUP_STATEMENT_TIMEOUT_MS,
-        () =>
-          sourceTable.minId(
-            tx,
-            timeFilter
-              ? {
-                  column: timeFilter.column,
-                  cast: timeFilter.cast,
-                  startingTime: timeFilter.startingTime,
-                }
-              : undefined,
-          ),
+        timeFilter
+          ? {
+              column: timeFilter.column,
+              cast: timeFilter.cast,
+              startingTime: timeFilter.startingTime,
+            }
+          : undefined,
       );
       startingId = minId ?? undefined;
       includeStart = true;

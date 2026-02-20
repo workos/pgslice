@@ -2,13 +2,7 @@ import { CommonQueryMethods } from "slonik";
 import { z } from "zod";
 
 import { Table, transformIdValue } from "./table.js";
-import {
-  formatDateForSql,
-  sql,
-  STARTUP_STATEMENT_TIMEOUT_MS,
-  valueToSql,
-  withStatementTimeout,
-} from "./sql-utils.js";
+import { formatDateForSql, sql, valueToSql } from "./sql-utils.js";
 import type {
   ColumnInfo,
   IdValue,
@@ -115,20 +109,15 @@ export class Synchronizer {
     if (options.start !== undefined) {
       startingId = transformIdValue(options.start);
     } else {
-      const minId = await withStatementTimeout(
+      const minId = await sourceTable.minId(
         tx,
-        STARTUP_STATEMENT_TIMEOUT_MS,
-        () =>
-          sourceTable.minId(
-            tx,
-            timeFilter
-              ? {
-                  column: timeFilter.column,
-                  cast: timeFilter.cast,
-                  startingTime: timeFilter.startingTime,
-                }
-              : undefined,
-          ),
+        timeFilter
+          ? {
+              column: timeFilter.column,
+              cast: timeFilter.cast,
+              startingTime: timeFilter.startingTime,
+            }
+          : undefined,
       );
       if (minId === null) {
         throw new Error("No rows found in source table");
