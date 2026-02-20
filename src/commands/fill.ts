@@ -66,7 +66,9 @@ export class FillCommand extends BaseCommand {
       })) {
         hasBatches = true;
 
-        this.context.stdout.write(`/* batch ${batch.batchNumber} */\n`);
+        this.context.stdout.write(
+          `/* batch ${batch.batchNumber}: ${batch.rowsInserted} rows inserted, endId=${batch.endId} */\n`,
+        );
 
         // Sleep between batches if requested
         if (this.sleep) {

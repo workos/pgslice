@@ -85,6 +85,12 @@ Options:
 - `--start`: Primary key value to start from (numeric or ULID)
 - `--where`: Additional WHERE conditions to filter rows
 
+By default, `fill` auto-detects a starting ID by scanning for the smallest
+primary key (bounded to the partition time range for partitioned tables). This
+lookup can be slow on very large tables without a supporting index. If you're
+resuming or want to skip the startup scan, pass `--start` instead (the batch
+output includes `endId` for easy resuming).
+
 To sync data across different databases, check out [pgsync](https://github.com/ankane/pgsync).
 
 7. Analyze tables

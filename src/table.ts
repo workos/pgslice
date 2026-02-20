@@ -437,22 +437,26 @@ export class Table {
     const col = sql.identifier([await this.primaryKey(tx)]);
 
     let whereClause = sql.fragment`1 = 1`;
-    const orderByClauses = [sql.fragment`${col} ASC`];
 
     if (options?.column && options.cast && options.startingTime) {
       const timeCol = sql.identifier([options.column]);
       const startDate = formatDateForSql(options.startingTime, options.cast);
 
       whereClause = sql.fragment`${timeCol} >= ${startDate}`;
-      orderByClauses.unshift(sql.fragment`${timeCol} ASC`);
     }
 
+    // We want the smallest PK within the time range, so we order by PK and take
+    // the first row. Ordering by time (created_at) is faster, but only correct
+    // if PK order is monotonic with the partition column. With ULIDs, clock
+    // skew, backfills, or manual timestamps can yield smaller PKs with later
+    // timestamps, which would be skipped. This path favors correctness; it can
+    // be slower on large tables without a supporting index.
     const result = await tx.maybeOne(
       sql.type(z.object({ min_id: idValueSchema }))`
         SELECT ${col} AS min_id
         FROM ${this.sqlIdentifier}
         WHERE ${whereClause}
-        ORDER BY ${sql.join(orderByClauses, sql.fragment`, `)}
+        ORDER BY ${col} ASC
         LIMIT 1
       `,
     );
