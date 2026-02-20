@@ -445,10 +445,12 @@ export class Table {
       whereClause = sql.fragment`${timeCol} >= ${startDate}`;
     }
 
-    // Order by PK only (not time column) so we get the smallest PK in the
-    // time range. Ordering by time first would miss rows with a smaller PK
-    // but later timestamp when PKs aren't monotonic with the partition column.
-    // LIMIT 1 lets Postgres use an index scan on the PK.
+    // We want the smallest PK within the time range, so we order by PK and take
+    // the first row. Ordering by time (created_at) is faster, but only correct
+    // if PK order is monotonic with the partition column. With ULIDs, clock
+    // skew, backfills, or manual timestamps can yield smaller PKs with later
+    // timestamps, which would be skipped. This path favors correctness; it can
+    // be slower on large tables without a supporting index.
     const result = await tx.maybeOne(
       sql.type(z.object({ min_id: idValueSchema }))`
         SELECT ${col} AS min_id

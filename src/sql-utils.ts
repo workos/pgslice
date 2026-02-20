@@ -1,5 +1,6 @@
 import {
   createSqlTag,
+  type CommonQueryMethods,
   type PrimitiveValueExpression,
   type SerializableValue,
 } from "slonik";
@@ -12,6 +13,8 @@ export const sql = createSqlTag({
     void: z.object({}).strict(),
   },
 });
+
+export const STARTUP_STATEMENT_TIMEOUT_MS = 5 * 60 * 1000;
 
 /**
  * Creates a SQL fragment from a raw string.
@@ -85,4 +88,56 @@ export function valueToSql(val: unknown, dataType: string) {
   }
 
   return sql.fragment`${val as PrimitiveValueExpression}`;
+}
+
+const statementTimeoutSchema = z.object({
+  statement_timeout: z.string(),
+  statement_timeout_ms: z.coerce.number(),
+});
+
+export async function withStatementTimeout<T>(
+  connection: CommonQueryMethods,
+  minTimeoutMs: number | undefined,
+  handler: () => Promise<T>,
+): Promise<T> {
+  if (!minTimeoutMs || minTimeoutMs <= 0) {
+    return handler();
+  }
+
+  const settings = await connection.one(
+    sql.type(statementTimeoutSchema)`
+      SELECT
+        current_setting('statement_timeout') AS statement_timeout,
+        CASE
+          WHEN current_setting('statement_timeout') IN ('0', '0ms') THEN 0
+          ELSE (EXTRACT(EPOCH FROM current_setting('statement_timeout')::interval) * 1000)::bigint
+        END AS statement_timeout_ms
+    `,
+  );
+
+  if (
+    settings.statement_timeout_ms === 0 ||
+    settings.statement_timeout_ms >= minTimeoutMs
+  ) {
+    return handler();
+  }
+
+  await connection.query(
+    sql.typeAlias(
+      "void",
+    )`SELECT set_config('statement_timeout', ${String(minTimeoutMs)}, true)`,
+  );
+  try {
+    return await handler();
+  } finally {
+    try {
+      await connection.query(
+        sql.typeAlias(
+          "void",
+        )`SELECT set_config('statement_timeout', ${settings.statement_timeout}, true)`,
+      );
+    } catch {
+      // Ignore errors to avoid masking the original failure.
+    }
+  }
 }

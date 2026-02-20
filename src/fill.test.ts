@@ -374,7 +374,9 @@ describe("Pgslice.fill", () => {
     vi.setSystemTime(new Date(Date.UTC(2026, 0, 15)));
 
     try {
-      // PK order doesn't match created_at order: id=1 has a later date than id=2
+      // PK order doesn't match created_at order: id=1 has a later date than id=2.
+      // If we chose the start ID from the earliest created_at row (id=2),
+      // we'd skip id=1 even though it's in-range. This mirrors ULID/time skew.
       await transaction.query(sql.unsafe`
         CREATE TABLE posts (
           id BIGSERIAL PRIMARY KEY,
@@ -412,7 +414,7 @@ describe("Pgslice.fill", () => {
           SELECT name FROM posts_intermediate ORDER BY id ASC
         `,
       );
-      // Both rows should be filled regardless of PK/time ordering
+      // Both rows should be filled regardless of PK/time ordering.
       expect(rows.map((row) => row.name)).toEqual([
         "later-date-lower-pk",
         "earlier-date-higher-pk",

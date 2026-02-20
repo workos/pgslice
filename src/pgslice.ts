@@ -420,7 +420,9 @@ export class Pgslice {
     );
 
     try {
-      const filler = await Filler.init(connection, options);
+      const filler = await connection.transaction((tx) =>
+        Filler.init(tx, options),
+      );
 
       for await (const batch of filler.fill(connection)) {
         yield batch;
@@ -447,7 +449,9 @@ export class Pgslice {
       "synchronize",
     );
     try {
-      const synchronizer = await Synchronizer.init(connection, options);
+      const synchronizer = await connection.transaction((tx) =>
+        Synchronizer.init(tx, options),
+      );
 
       for await (const batch of synchronizer.synchronize(connection)) {
         yield batch;
