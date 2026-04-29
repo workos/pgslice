@@ -16,8 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     name: Lint and build
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v3
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db  # v3
       - run: npm ci
       - run: npm run build
       - run: npm run format:check
@@ -34,9 +34,9 @@ jobs:
       matrix:
         postgres: [13, 15, 17, 18]
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v3
-      - uses: ankane/setup-postgres@v1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db  # v3
+      - uses: ankane/setup-postgres@4aaf5f833005d1475c041ba96f797d208129630c  # v1
         with:
           postgres-version: ${{ matrix.postgres }}
           database: pgslice_test
