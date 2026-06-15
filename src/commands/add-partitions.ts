@@ -46,6 +46,10 @@ export class AddPartitionsCommand extends BaseCommand {
   tablespace = Option.String("--tablespace", {
     description: "Tablespace to use for new partitions",
   });
+  inheritGrants = Option.Boolean("--inherit-grants", true, {
+    description:
+      "Copy the parent table's privileges onto each new partition (default: true; disable with --no-inherit-grants)",
+  });
 
   override async perform(pgslice: Pgslice): Promise<void> {
     await pgslice.start(async (tx) =>
@@ -55,6 +59,7 @@ export class AddPartitionsCommand extends BaseCommand {
         past: this.past,
         future: this.future,
         tablespace: this.tablespace,
+        inheritGrants: this.inheritGrants,
       }),
     );
   }

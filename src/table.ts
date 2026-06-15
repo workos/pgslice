@@ -5,7 +5,12 @@ import {
   IdentifierSqlToken,
 } from "slonik";
 import { z } from "zod";
-import { advanceDate, parsePartitionDate } from "./date-ranges.js";
+import {
+  advanceDate,
+  parsePartitionDate,
+  parseRangeBound,
+  type ExistingRange,
+} from "./date-ranges.js";
 import type {
   Cast,
   ColumnInfo,
@@ -109,6 +114,15 @@ export async function getServerVersionNum(
     `,
   );
   return result.server_version_num;
+}
+
+/**
+ * A privilege grant on a table. A null grantee represents PUBLIC.
+ */
+export interface TableGrant {
+  grantee: string | null;
+  privilege: string;
+  grantable: boolean;
 }
 
 /**
@@ -347,6 +361,67 @@ export class Table {
   }
 
   /**
+   * Gets the explicit primary key column names for this table, in key order.
+   *
+   * Unlike {@link primaryKey}, this supports composite primary keys and returns
+   * an empty array (rather than throwing) when no explicit primary key exists.
+   */
+  async primaryKeyColumns(
+    tx: DatabaseTransactionConnection,
+  ): Promise<string[]> {
+    const result = await tx.any(
+      sql.type(z.object({ attname: z.string(), ord: z.coerce.number() }))`
+        SELECT a.attname, k.ord
+        FROM pg_index i
+          JOIN pg_class c ON c.oid = i.indrelid
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          CROSS JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
+          JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.attnum
+        WHERE n.nspname = ${this.schema}
+          AND c.relname = ${this.name}
+          AND i.indisprimary
+        ORDER BY k.ord
+      `,
+    );
+
+    return result.map((row) => row.attname);
+  }
+
+  /**
+   * Gets the privilege grants present on this table, excluding the table
+   * owner's implicit privileges. A null grantee represents PUBLIC.
+   */
+  async grants(tx: DatabaseTransactionConnection): Promise<TableGrant[]> {
+    const result = await tx.any(
+      sql.type(
+        z.object({
+          grantee: z.string().nullable(),
+          privilege_type: z.string(),
+          is_grantable: z.boolean(),
+        }),
+      )`
+        SELECT
+          grantee_role.rolname AS grantee,
+          acl.privilege_type,
+          acl.is_grantable
+        FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          CROSS JOIN LATERAL aclexplode(c.relacl) AS acl
+          LEFT JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+        WHERE n.nspname = ${this.schema}
+          AND c.relname = ${this.name}
+          AND acl.grantee <> c.relowner
+      `,
+    );
+
+    return result.map((row) => ({
+      grantee: row.grantee,
+      privilege: row.privilege_type,
+      grantable: row.is_grantable,
+    }));
+  }
+
+  /**
    * Gets all child partitions of this table.
    */
   async partitions(tx: CommonQueryMethods): Promise<Table[]> {
@@ -368,6 +443,85 @@ export class Table {
     );
 
     return result.map((r) => new Table(r.schema, r.name));
+  }
+
+  /**
+   * Returns the names of this partitioned table's leaf partitions that lack a
+   * replica identity usable for logical replication. A partition is unsafe when
+   * it has `REPLICA IDENTITY NOTHING`, or the default identity with no primary
+   * key — in either case Postgres rejects `UPDATE`/`DELETE` on a published
+   * table. Partitions covered by a primary key (the native parent-owned key or a
+   * per-partition key), or an explicit FULL / USING INDEX identity, are safe.
+   *
+   * This is a read-only invariant check. A new partition is created with the
+   * default replica identity (`relreplident='d'`), so its row identity is its
+   * own (or inherited) primary key — Postgres does not copy a parent's
+   * `REPLICA IDENTITY USING INDEX` choice down to leaves. New partitions are
+   * thus CDC-safe with no replica-identity DDL as long as each leaf's primary
+   * key covers the columns CDC keys on (for the managed tables the `(id, key)`
+   * composite key, which equals any USING INDEX identity the parent carries). A
+   * non-empty result signals a table whose shape is misconfigured for CDC, not a
+   * step pgslice needs to perform.
+   *
+   * Assumes single-level partitioning (the managed tables are not
+   * sub-partitioned): it inspects direct children, which are the data leaves.
+   */
+  async unsafeReplicaIdentityPartitions(
+    tx: CommonQueryMethods,
+  ): Promise<string[]> {
+    const rows = await tx.any(
+      sql.type(z.object({ name: z.string() }))`
+        SELECT child.relname AS name
+        FROM pg_inherits i
+          JOIN pg_class parent ON parent.oid = i.inhparent
+          JOIN pg_class child ON child.oid = i.inhrelid
+          JOIN pg_namespace nmsp_parent ON nmsp_parent.oid = parent.relnamespace
+        WHERE
+          nmsp_parent.nspname = ${this.schema} AND
+          parent.relname = ${this.name} AND
+          (
+            child.relreplident = 'n'
+            OR (
+              child.relreplident = 'd'
+              AND NOT EXISTS (
+                SELECT 1 FROM pg_index pk
+                WHERE pk.indrelid = child.oid AND pk.indisprimary
+              )
+            )
+          )
+        ORDER BY child.relname ASC
+      `,
+    );
+
+    return rows.map((r) => r.name);
+  }
+
+  /**
+   * Reads the RANGE bounds of this partitioned table's existing child
+   * partitions from the catalog. Used to extend an existing table by partition
+   * bounds rather than by name, so legacy-named partitions (created outside
+   * pgslice) are recognized and never collided with or renamed.
+   *
+   * Non-RANGE bounds we don't manage are skipped.
+   */
+  async rangePartitionBounds(tx: CommonQueryMethods): Promise<ExistingRange[]> {
+    const rows = await tx.any(
+      sql.type(z.object({ bound: z.string() }))`
+        SELECT pg_get_expr(child.relpartbound, child.oid) AS bound
+        FROM pg_inherits
+          JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
+          JOIN pg_class child ON pg_inherits.inhrelid = child.oid
+          JOIN pg_namespace nmsp_parent ON nmsp_parent.oid = parent.relnamespace
+        WHERE
+          nmsp_parent.nspname = ${this.schema} AND
+          parent.relname = ${this.name}
+      `,
+    );
+
+    return rows.flatMap((r) => {
+      const parsed = parseRangeBound(r.bound);
+      return parsed ? [parsed] : [];
+    });
   }
 
   /**

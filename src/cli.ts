@@ -7,6 +7,7 @@ import { DisableRetiredMirroringCommand } from "./commands/disable-retired-mirro
 import { EnableMirroringCommand } from "./commands/enable-mirroring.js";
 import { EnableRetiredMirroringCommand } from "./commands/enable-retired-mirroring.js";
 import { FillCommand } from "./commands/fill.js";
+import { MaintainCommand } from "./commands/maintain.js";
 import { PrepCommand } from "./commands/prep.js";
 import { StatusCommand } from "./commands/status.js";
 import { SwapCommand } from "./commands/swap.js";
@@ -30,6 +31,7 @@ export function createCli(): Cli {
   cli.register(EnableMirroringCommand);
   cli.register(EnableRetiredMirroringCommand);
   cli.register(FillCommand);
+  cli.register(MaintainCommand);
   cli.register(PrepCommand);
   cli.register(StatusCommand);
   cli.register(SwapCommand);
