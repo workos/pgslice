@@ -1,3 +1,11 @@
+## Unreleased
+
+- Added support for managing existing (already-partitioned) tables: bounds-anchored extension that recognizes legacy-named partitions and extends contiguously without renaming, gaps, or overlaps
+- Added a weekly (ISO-week, Monday-aligned) period
+- Added composite / parent-owned primary key support to `add_partitions` (skips the redundant per-partition key when the parent owns one)
+- Added grant inheritance on new partitions, on by default (`--no-inherit-grants` to disable)
+- Added UTC-pinned, type-correct bounds so `timestamptz`-keyed tables extend deterministically regardless of session timezone
+
 ## 0.7.1 (2025-07-27)
 
 - Fixed `analyze` analyzing partitions twice with declarative partitioning
