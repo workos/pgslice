@@ -1,10 +1,36 @@
 import { describe, expect } from "vitest";
+import { sql } from "slonik";
 
 import { commandTest as test } from "../testing/index.js";
 import { AddPartitionsCommand } from "./add-partitions.js";
 
 describe("AddPartitionsCommand", () => {
   test.scoped({ commandClass: ({}, use) => use(AddPartitionsCommand) });
+
+  test("reports the partitions it created", async ({
+    cli,
+    commandContext,
+    transaction,
+  }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts (
+        id bigint NOT NULL,
+        created_at timestamp without time zone NOT NULL,
+        PRIMARY KEY (id, created_at)
+      ) PARTITION BY RANGE (created_at)
+    `);
+    await transaction.query(sql.unsafe`
+      COMMENT ON TABLE posts IS 'column:created_at,period:month,cast:date,version:3'
+    `);
+
+    const exitCode = await cli.run(
+      ["add_partitions", "posts", "--future=1"],
+      commandContext,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(commandContext.stdout.read()?.toString()).toContain("posts: +");
+  });
 
   test("returns error when --past is negative", async ({
     cli,

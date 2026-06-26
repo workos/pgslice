@@ -3,6 +3,15 @@ import { sql } from "slonik";
 
 import { pgsliceTest as test } from "./testing/index.js";
 import { Table } from "./table.js";
+import {
+  addChild,
+  addDefault,
+  addMinvalueChild,
+  createCdcRole,
+  nativeParent,
+  TS,
+  TSTZ,
+} from "./testing/shapes.js";
 
 describe("Table.isPartitioned", () => {
   test("returns true for partitioned table", async ({ transaction }) => {
@@ -568,5 +577,164 @@ describe("Table.primaryKey", () => {
     const primaryKey = await table.primaryKey(transaction);
 
     expect(primaryKey).toEqual("Id");
+  });
+});
+
+describe("Table.primaryKeyColumns", () => {
+  test("returns a composite primary key in key order", async ({
+    transaction,
+  }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE composite_pk (
+        id bigint NOT NULL,
+        created_at timestamp NOT NULL,
+        PRIMARY KEY (id, created_at)
+      )
+    `);
+    expect(
+      await Table.parse("composite_pk").primaryKeyColumns(transaction),
+    ).toEqual(["id", "created_at"]);
+  });
+
+  test("returns a three-column composite key in declared order", async ({
+    transaction,
+  }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE three_pk (
+        tenant_id bigint NOT NULL,
+        id bigint NOT NULL,
+        created_at timestamp NOT NULL,
+        PRIMARY KEY (tenant_id, id, created_at)
+      )
+    `);
+    expect(
+      await Table.parse("three_pk").primaryKeyColumns(transaction),
+    ).toEqual(["tenant_id", "id", "created_at"]);
+  });
+
+  test("returns an empty array when there is no primary key", async ({
+    transaction,
+  }) => {
+    await transaction.query(
+      sql.unsafe`CREATE TABLE no_pk (id bigint, payload text)`,
+    );
+    expect(await Table.parse("no_pk").primaryKeyColumns(transaction)).toEqual(
+      [],
+    );
+  });
+});
+
+describe("Table.grants", () => {
+  test("returns each grantee's privileges with grantable flags, excluding the owner", async ({
+    transaction,
+  }) => {
+    await createCdcRole(transaction, "cdc_table_grants");
+    await transaction.query(
+      sql.unsafe`CREATE TABLE granted (id bigint, created_at timestamptz)`,
+    );
+    await transaction.query(sql.unsafe`
+      GRANT SELECT ON granted TO cdc_table_grants WITH GRANT OPTION
+    `);
+    await transaction.query(
+      sql.unsafe`GRANT INSERT ON granted TO cdc_table_grants`,
+    );
+
+    const grants = await Table.parse("granted").grants(transaction);
+
+    expect(grants).toEqual(
+      expect.arrayContaining([
+        { grantee: "cdc_table_grants", privilege: "SELECT", grantable: true },
+        { grantee: "cdc_table_grants", privilege: "INSERT", grantable: false },
+      ]),
+    );
+    // The owner's implicit privileges are excluded.
+    expect(grants.every((g) => g.grantee !== "postgres")).toBe(true);
+  });
+
+  test("represents a PUBLIC grant with a null grantee", async ({
+    transaction,
+  }) => {
+    await transaction.query(sql.unsafe`CREATE TABLE public_grant (id bigint)`);
+    await transaction.query(sql.unsafe`GRANT SELECT ON public_grant TO PUBLIC`);
+
+    const grants = await Table.parse("public_grant").grants(transaction);
+
+    expect(grants).toContainEqual({
+      grantee: null,
+      privilege: "SELECT",
+      grantable: false,
+    });
+  });
+});
+
+describe("Table.rangePartitionBounds", () => {
+  test("parses a mixed set of finite, MINVALUE, and DEFAULT bounds", async ({
+    transaction,
+  }) => {
+    await nativeParent(
+      transaction,
+      "bounds",
+      "created_at",
+      TS,
+      "month",
+      "date",
+    );
+    await addChild(
+      transaction,
+      "bounds",
+      "bounds_202601",
+      "2026-01-01",
+      "2026-02-01",
+    );
+    await addMinvalueChild(
+      transaction,
+      "bounds",
+      "bounds_historic",
+      "2025-01-01",
+    );
+    await addDefault(transaction, "bounds", "bounds_default");
+
+    const ranges =
+      await Table.parse("bounds").rangePartitionBounds(transaction);
+
+    expect(ranges).toHaveLength(3);
+    expect(ranges.filter((r) => r.isDefault)).toHaveLength(1);
+
+    const historic = ranges.find((r) => r.lowerUnbounded && !r.isDefault);
+    expect(historic?.upper).toEqual(new Date("2025-01-01T00:00:00Z"));
+
+    const finiteRange = ranges.find(
+      (r) => !r.isDefault && !r.lowerUnbounded && !r.upperUnbounded,
+    );
+    expect(finiteRange?.lower).toEqual(new Date("2026-01-01T00:00:00Z"));
+    expect(finiteRange?.upper).toEqual(new Date("2026-02-01T00:00:00Z"));
+  });
+
+  test("parses timestamptz bounds as UTC under a UTC-pinned session", async ({
+    transaction,
+  }) => {
+    // The documented contract: read bounds in a UTC-pinned transaction.
+    await transaction.query(sql.unsafe`SET LOCAL TIME ZONE 'UTC'`);
+    await nativeParent(
+      transaction,
+      "tz_bounds",
+      "created_at",
+      TSTZ,
+      "week",
+      "timestamptz",
+    );
+    await addChild(
+      transaction,
+      "tz_bounds",
+      "tz_bounds_2026w03",
+      "2026-01-12 00:00:00+00",
+      "2026-01-19 00:00:00+00",
+    );
+
+    const ranges =
+      await Table.parse("tz_bounds").rangePartitionBounds(transaction);
+    const finiteRange = ranges.find((r) => !r.isDefault);
+    expect(finiteRange?.lower).toEqual(new Date("2026-01-12T00:00:00Z"));
+    expect(finiteRange?.upper).toEqual(new Date("2026-01-19T00:00:00Z"));
   });
 });
