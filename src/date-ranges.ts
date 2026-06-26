@@ -162,10 +162,11 @@ export function parsePartitionDate(
       return new Date(Date.UTC(year, month, day));
     }
     case "week": {
-      // Format: <ISO year>w<ISO week>, e.g. "2026w32". A legacy-prefixed suffix
-      // (e.g. "y2026w03") would split to NaN and yield an Invalid Date; fail
-      // loudly instead so misuse on a legacy-named table is immediately visible.
-      if (!/^\d{4}w\d{2}$/.test(suffix)) {
+      // Format: <ISO year>w<ISO week>, e.g. "2026w32" (week 01–53). A
+      // legacy-prefixed or out-of-range suffix (e.g. "y2026w03", "2026w00",
+      // "2026w54") would yield a wrong/Invalid Date; fail loudly instead so
+      // misuse on a legacy-named table is immediately visible.
+      if (!/^\d{4}w(0[1-9]|[1-4]\d|5[0-3])$/.test(suffix)) {
         throw new Error(
           `Unrecognized week partition suffix "${suffix}" in "${partitionName}"`,
         );

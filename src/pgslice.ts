@@ -354,8 +354,12 @@ export class Pgslice {
           );
         }
 
+        // Read grants from the original table, the source of truth. In the
+        // intermediate flow targetTable is the freshly-prepped intermediate
+        // (which carries no grants), so reading it would silently inherit
+        // nothing; in the retrofit flow originalTable === targetTable.
         const grants =
-          (options.inheritGrants ?? true) ? await targetTable.grants(tx) : [];
+          (options.inheritGrants ?? true) ? await originalTable.grants(tx) : [];
 
         // Read existing partition bounds (empty for the intermediate/prep
         // flow, which operates on a freshly-created intermediate table).

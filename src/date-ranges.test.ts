@@ -402,8 +402,15 @@ describe("parsePartitionDate", () => {
     );
   });
 
-  it("throws on a legacy-prefixed week suffix it can't parse", () => {
+  it("throws on a legacy-prefixed or out-of-range week suffix it can't parse", () => {
     expect(() => parsePartitionDate("evt_y2026w03", "week")).toThrow(
+      /Unrecognized week partition suffix/,
+    );
+    // Out-of-range ISO week numbers are rejected rather than silently parsed.
+    expect(() => parsePartitionDate("evt_2026w00", "week")).toThrow(
+      /Unrecognized week partition suffix/,
+    );
+    expect(() => parsePartitionDate("evt_2026w54", "week")).toThrow(
       /Unrecognized week partition suffix/,
     );
   });

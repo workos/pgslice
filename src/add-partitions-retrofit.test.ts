@@ -142,6 +142,39 @@ describe("Pgslice.addPartitions (retrofit)", () => {
 
       expect(granted).toBe(false);
     });
+
+    test("inherits the original table's grants during the intermediate flow", async ({
+      pgslice,
+      transaction,
+    }) => {
+      // Simulate prep: an intermediate partitioned table carrying the settings
+      // but no grants of its own. Inheritance must read grants from the
+      // original `posts` (which has the SELECT grant), not the intermediate.
+      await transaction.query(sql.unsafe`
+        CREATE TABLE posts_intermediate (
+          id varchar NOT NULL,
+          author_id varchar NOT NULL,
+          created_at timestamp without time zone NOT NULL,
+          PRIMARY KEY (id, created_at)
+        ) PARTITION BY RANGE (created_at)
+      `);
+      await transaction.query(sql.unsafe`
+        COMMENT ON TABLE posts_intermediate IS 'column:created_at,period:month,cast:date,version:3'
+      `);
+
+      await pgslice.addPartitions(transaction, {
+        table: "posts",
+        intermediate: true,
+        future: 1,
+      });
+
+      const { granted } = await transaction.one(
+        sql.type(z.object({ granted: z.boolean() }))`
+          SELECT has_table_privilege('pgslice_grant_test', 'public.posts_202601', 'SELECT') AS granted
+        `,
+      );
+      expect(granted).toBe(true);
+    });
   });
 
   describe("weekly period", () => {
