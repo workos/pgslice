@@ -26,19 +26,24 @@ function startOfIsoWeek(date: Date): Date {
  * Per ISO 8601, week 1 is the week containing the year's first Thursday.
  */
 function isoWeekInfo(date: Date): { isoYear: number; isoWeek: number } {
-  const thursday = startOfIsoWeek(date);
-  thursday.setUTCDate(thursday.getUTCDate() + 3);
+  // The Thursday of the ISO week containing `date` determines the ISO year and
+  // anchors the week count (ISO week 1 is the week containing the year's first
+  // Thursday).
+  const weekMonday = startOfIsoWeek(date);
+  const thursday = new Date(weekMonday);
+  thursday.setUTCDate(weekMonday.getUTCDate() + 3);
 
   const isoYear = thursday.getUTCFullYear();
-  const firstThursday = new Date(Date.UTC(isoYear, 0, 4));
-  firstThursday.setUTCDate(
-    firstThursday.getUTCDate() - (isoWeekday(firstThursday) - 1) + 3,
-  );
+  // The Thursday of ISO week 1: Jan 4 is always in week 1, so take the Monday
+  // of its week and advance to Thursday.
+  const jan4 = new Date(Date.UTC(isoYear, 0, 4));
+  const week1Thursday = new Date(jan4);
+  week1Thursday.setUTCDate(jan4.getUTCDate() - (isoWeekday(jan4) - 1) + 3);
 
   const isoWeek =
     1 +
     Math.round(
-      (thursday.getTime() - firstThursday.getTime()) / (7 * MS_PER_DAY),
+      (thursday.getTime() - week1Thursday.getTime()) / (7 * MS_PER_DAY),
     );
 
   return { isoYear, isoWeek };
