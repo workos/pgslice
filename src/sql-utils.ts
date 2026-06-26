@@ -26,7 +26,10 @@ export function rawSql(query: string) {
 
 /**
  * Formats a Date as a SQL literal value for use in partition constraints.
- * Uses UTC values to ensure consistent behavior across timezones.
+ * Uses UTC values to ensure consistent behavior across timezones. Bounds are
+ * emitted at UTC midnight (calendar-aligned); a table whose existing partitions
+ * sit on non-midnight boundaries is therefore not supported by bounds-anchored
+ * extension, since the first new bound would not abut the existing one.
  */
 export function formatDateForSql(date: Date, cast: Cast) {
   const year = date.getUTCFullYear();

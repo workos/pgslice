@@ -480,8 +480,8 @@ export class Pgslice {
   /**
    * Resolves the primary key columns to place on each new partition in the
    * classic pgslice model (where the parent has no primary key of its own).
-   * Supports composite keys and preserves the implicit single-column `id`
-   * fallback of {@link Table.primaryKey}.
+   * Returns the explicit (possibly composite) key when one exists; otherwise
+   * falls back to the implicit single-column `id` of {@link Table.primaryKey}.
    */
   async #partitionPrimaryKeyColumns(
     tx: DatabaseTransactionConnection,

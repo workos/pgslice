@@ -71,7 +71,7 @@ describe("legacy partitioned-table shapes", () => {
         `,
       );
       // Postgres does NOT cascade the parent's SELECT — this is the recurring
-      // "Fivetran breaks on a new partition" failure the feature fixes.
+      // "a replication role loses access to a new partition" failure this fixes.
       expect(granted).toBe(false);
     });
 
@@ -207,7 +207,7 @@ describe("legacy partitioned-table shapes", () => {
       });
 
       // The new leaf must carry the same index set (count + the partial) as a
-      // pre-existing leaf — INC-566-class regressions show up as a missing index.
+      // pre-existing leaf — a missing-index regression would show up here.
       const indexCount = async (leaf: string) => {
         const { count } = await transaction.one(
           sql.type(z.object({ count: z.coerce.number() }))`

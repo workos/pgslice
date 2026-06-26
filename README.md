@@ -280,11 +280,14 @@ To add partitions, use:
 pgslice add_partitions <table> --future 3
 ```
 
-Add this as a cron job to create a new partition each day, month, or year.
+Add this as a cron job to create a new partition each day, week, month, or year.
 
 ```sh
 # day
 0 0 * * * pgslice add_partitions <table> --future 3 --url ...
+
+# week (Monday-aligned ISO weeks)
+0 0 * * 1 pgslice add_partitions <table> --future 3 --url ...
 
 # month
 0 0 1 * * pgslice add_partitions <table> --future 3 --url ...
@@ -304,6 +307,7 @@ WHERE
     c.relkind = 'r' AND
     n.nspname = 'public' AND
     c.relname = '<table>_' || to_char(NOW() + INTERVAL '3 days', 'YYYYMMDD')
+    -- for weeks, use to_char(NOW() + INTERVAL '3 weeks', 'IYYY"w"IW')
     -- for months, use to_char(NOW() + INTERVAL '3 months', 'YYYYMM')
     -- for years, use to_char(NOW() + INTERVAL '3 years', 'YYYY')
 ```

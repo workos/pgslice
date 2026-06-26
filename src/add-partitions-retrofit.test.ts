@@ -425,5 +425,77 @@ describe("Pgslice.addPartitions (retrofit)", () => {
         "FOR VALUES FROM ('2026-06-22 00:00:00+00') TO ('2026-06-29 00:00:00+00')",
       );
     });
+
+    test("does not extend forward past a MAXVALUE catch-all partition", async ({
+      pgslice,
+      transaction,
+    }) => {
+      vi.setSystemTime(new Date(Date.UTC(2026, 5, 15)));
+      await transaction.query(sql.unsafe`
+        CREATE TABLE evt (
+          id varchar NOT NULL,
+          created_at timestamp without time zone NOT NULL,
+          PRIMARY KEY (id, created_at)
+        ) PARTITION BY RANGE (created_at)
+      `);
+      await transaction.query(sql.unsafe`
+        COMMENT ON TABLE evt IS 'column:created_at,period:month,cast:date,version:3'
+      `);
+      await transaction.query(sql.unsafe`
+        CREATE TABLE evt_202606 PARTITION OF evt
+          FOR VALUES FROM ('2026-06-01') TO ('2026-07-01')
+      `);
+      // An open-ended catch-all above already covers every future row.
+      await transaction.query(sql.unsafe`
+        CREATE TABLE evt_future PARTITION OF evt
+          FOR VALUES FROM ('2026-07-01') TO (MAXVALUE)
+      `);
+
+      await pgslice.addPartitions(transaction, { table: "evt", future: 3 });
+
+      // Forward extension is disabled when a partition is unbounded above —
+      // there is nothing to add, and no error is raised.
+      expect(
+        (await boundsByName(transaction)).map((r) => r.name).sort(),
+      ).toEqual(["evt_202606", "evt_future"]);
+    });
+
+    test("extends a classic (parent has no PK) table with the inherited composite key", async ({
+      pgslice,
+      transaction,
+    }) => {
+      vi.setSystemTime(new Date(Date.UTC(2026, 5, 15)));
+      await transaction.query(sql.unsafe`
+        CREATE TABLE evt (
+          id varchar NOT NULL,
+          tenant_id varchar NOT NULL,
+          created_at timestamp without time zone NOT NULL
+        ) PARTITION BY RANGE (created_at)
+      `);
+      await transaction.query(sql.unsafe`
+        COMMENT ON TABLE evt IS 'column:created_at,period:month,cast:date,version:3'
+      `);
+      // Classic pgslice model: the parent has no key; each partition owns a
+      // (here three-column) composite key of its own.
+      await transaction.query(sql.unsafe`
+        CREATE TABLE evt_202606 PARTITION OF evt
+          FOR VALUES FROM ('2026-06-01') TO ('2026-07-01')
+      `);
+      await transaction.query(sql.unsafe`
+        ALTER TABLE evt_202606 ADD PRIMARY KEY (tenant_id, id, created_at)
+      `);
+
+      await pgslice.addPartitions(transaction, { table: "evt", future: 1 });
+
+      const pk = await transaction.any(
+        sql.type(z.object({ def: z.string() }))`
+          SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint
+          WHERE conrelid = 'public.evt_202607'::regclass AND contype = 'p'
+        `,
+      );
+      expect(pk.map((c) => c.def)).toEqual([
+        "PRIMARY KEY (tenant_id, id, created_at)",
+      ]);
+    });
   });
 });
