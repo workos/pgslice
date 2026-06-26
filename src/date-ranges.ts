@@ -254,7 +254,13 @@ function parseBoundValue(value: string): {
   if (token === "MINVALUE" || token === "MAXVALUE") {
     return { date: null, unbounded: true };
   }
-  const match = token.match(
+  // A single-column RANGE bound is exactly one quoted literal; anything else
+  // (e.g. a multi-column key like `'2026-01-01', 5`) is a shape we don't manage.
+  const literal = token.match(/^'([^']*)'$/);
+  if (!literal) {
+    return null;
+  }
+  const match = literal[1].match(
     /(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}:\d{2}(?:\.\d+)?))?/,
   );
   if (!match) {

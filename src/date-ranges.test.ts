@@ -487,6 +487,16 @@ describe("parseRangeBound", () => {
     // An integer range; a non-date bound must not read as an infinite span.
     expect(parseRangeBound("FOR VALUES FROM ('100') TO ('200')")).toBeNull();
   });
+
+  it("returns null for a multi-column RANGE bound", () => {
+    // A compound key (timestamp, int): we manage only single-column temporal
+    // ranges, so this must not be misread as a single date bound.
+    expect(
+      parseRangeBound(
+        "FOR VALUES FROM ('2026-01-01 00:00:00+00', 5) TO ('2026-04-01 00:00:00+00', 10)",
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("maxUpperBound / minLowerBound", () => {

@@ -334,30 +334,25 @@ export class Pgslice {
         const past = options.past ?? 0;
         const future = options.future ?? 0;
 
-        // Determine which table to read the schema (primary key) from.
-        // For intermediate tables, use the original table.
-        // For swapped tables, use the last existing partition (if any) or the original.
-        let schemaTable: Table;
-        if (options.intermediate) {
-          schemaTable = originalTable;
-        } else {
-          const existingPartitions = await targetTable.partitions(tx);
-          schemaTable =
-            existingPartitions.length > 0
-              ? existingPartitions[existingPartitions.length - 1]
-              : originalTable;
-        }
-
         // If the partitioned parent owns a primary key, Postgres propagates it
         // (and any partitioned indexes) to each new partition automatically, so
         // we must not add a per-partition primary key. Otherwise we follow the
         // classic pgslice model and add the key to each partition ourselves,
         // supporting composite keys.
         const parentPrimaryKey = await targetTable.primaryKeyColumns(tx);
-        const partitionPrimaryKey =
-          parentPrimaryKey.length > 0
-            ? []
-            : await this.#partitionPrimaryKeyColumns(tx, schemaTable);
+        let partitionPrimaryKey: string[] = [];
+        if (parentPrimaryKey.length === 0) {
+          // Classic model only: read the key to replicate onto each new
+          // partition from the original table (intermediate flow) or the last
+          // existing partition. Native (parent-owned-PK) tables skip this query.
+          const schemaTable = options.intermediate
+            ? originalTable
+            : ((await targetTable.partitions(tx)).at(-1) ?? originalTable);
+          partitionPrimaryKey = await this.#partitionPrimaryKeyColumns(
+            tx,
+            schemaTable,
+          );
+        }
 
         const grants =
           (options.inheritGrants ?? true) ? await targetTable.grants(tx) : [];
