@@ -426,6 +426,35 @@ describe("Pgslice.addPartitions (retrofit)", () => {
       );
     });
 
+    test("creates the current period at --future 0 when it is not yet covered", async ({
+      pgslice,
+      transaction,
+    }) => {
+      // today is June 2026; the latest existing partition is May, so today's
+      // period is uncovered. --future 0 must still create June, matching the
+      // fresh-table path which always includes the current period.
+      vi.setSystemTime(new Date(Date.UTC(2026, 5, 15)));
+      await transaction.query(sql.unsafe`
+        CREATE TABLE evt (
+          id varchar NOT NULL,
+          created_at timestamp without time zone NOT NULL,
+          PRIMARY KEY (id, created_at)
+        ) PARTITION BY RANGE (created_at)
+      `);
+      await transaction.query(sql.unsafe`
+        COMMENT ON TABLE evt IS 'column:created_at,period:month,cast:date,version:3'
+      `);
+      await transaction.query(sql.unsafe`
+        CREATE TABLE evt_202605 PARTITION OF evt
+          FOR VALUES FROM ('2026-05-01') TO ('2026-06-01')
+      `);
+
+      await pgslice.addPartitions(transaction, { table: "evt", future: 0 });
+
+      const names = (await boundsByName(transaction)).map((r) => r.name);
+      expect(names).toContain("evt_202606");
+    });
+
     test("does not extend forward past a MAXVALUE catch-all partition", async ({
       pgslice,
       transaction,

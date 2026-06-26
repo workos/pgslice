@@ -385,12 +385,14 @@ export class Pgslice {
           const candidates: DateRange[] = [];
 
           // Forward extension fills every period from the last existing bound
-          // to the horizon. If a table lapsed (its newest partition is well in
-          // the past), this back-fills the whole gap in one run — intended, and
-          // bounded by MAX_GENERATED_PARTITIONS.
+          // to the horizon (today + future periods). With future = 0 the
+          // horizon is today, so the current period is still created if not yet
+          // covered — matching the fresh-table path, which always includes
+          // today. If a table lapsed, this back-fills the whole gap in one run
+          // — intended, and bounded by MAX_GENERATED_PARTITIONS.
           const maxUpper = maxUpperBound(existingRanges);
           const unboundedAbove = finiteRanges.some((r) => r.upperUnbounded);
-          if (maxUpper && !unboundedAbove && future > 0) {
+          if (maxUpper && !unboundedAbove) {
             const horizon = advanceDate(today, settings.period, future);
             for (const range of extendRanges({
               anchorStart: maxUpper,

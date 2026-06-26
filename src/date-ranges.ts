@@ -260,8 +260,11 @@ function parseBoundValue(value: string): {
   if (!literal) {
     return null;
   }
+  // Anchored: a date, an optional time, and an optional (UTC, redundant)
+  // offset — and nothing else. Unexpected trailing content yields null rather
+  // than a silently-truncated parse.
   const match = literal[1].match(
-    /(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}:\d{2}(?:\.\d+)?))?/,
+    /^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}:\d{2}(?:\.\d+)?)(?:[+-]\d{2}(?::?\d{2})?)?)?$/,
   );
   if (!match) {
     return null;
