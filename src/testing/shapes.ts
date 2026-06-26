@@ -246,7 +246,12 @@ export async function childBounds(
   );
 }
 
-/** Asserts contiguity (no gap, no overlap) over a set of partition bounds. */
+/**
+ * Asserts contiguity (no gap, no overlap) over a set of partition bounds.
+ * Only finite `FROM ('..') TO ('..')` bounds participate: MINVALUE/MAXVALUE and
+ * DEFAULT partitions have no finite endpoint and are ignored, so callers that
+ * want them considered must assert those edges separately.
+ */
 export function assertContiguous(
   bounds: readonly { name: string; bound: string }[],
 ): void {

@@ -412,6 +412,8 @@ export function* extendRangesBackward(options: {
   let end = options.anchorEnd;
   for (let count = 0; count < MAX_GENERATED_PARTITIONS; count++) {
     const start = advanceDate(end, options.period, -1);
+    // Inclusive of the horizon period (start >= horizon), mirroring the
+    // start <= horizon guard in extendRanges for the opposite direction.
     if (start.getTime() < options.horizon.getTime()) {
       break;
     }
