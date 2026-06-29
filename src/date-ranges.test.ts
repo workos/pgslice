@@ -416,6 +416,66 @@ describe("parsePartitionDate", () => {
   });
 });
 
+describe("custom partition formats", () => {
+  const monday = new Date(Date.UTC(2026, 7, 10)); // ISO 2026-W33 Monday
+
+  it("renders a weekly suffix with a configurable prefix", () => {
+    expect(formatDateSuffix(monday, "week", "p{YYYY}w{WW}")).toBe("p2026w33");
+    expect(formatDateSuffix(monday, "week", "y{YYYY}w{WW}")).toBe("y2026w33");
+    // No format => the period default, unchanged.
+    expect(formatDateSuffix(monday, "week")).toBe("2026w33");
+  });
+
+  it("renders a monthly suffix with a prefix and separator", () => {
+    const may = new Date(Date.UTC(2027, 4, 1));
+    expect(formatDateSuffix(may, "month", "y{YYYY}m{MM}")).toBe("y2027m05");
+    expect(formatDateSuffix(may, "month")).toBe("202705");
+  });
+
+  it("round-trips each custom format through parsePartitionDate", () => {
+    const cases = [
+      { format: "p{YYYY}w{WW}", period: "week", iso: "2026-08-10" },
+      { format: "y{YYYY}w{WW}", period: "week", iso: "2025-12-29" },
+      { format: "y{YYYY}m{MM}", period: "month", iso: "2027-05-01" },
+    ] as const;
+    for (const { format, period, iso } of cases) {
+      const start = new Date(`${iso}T00:00:00Z`);
+      const suffix = formatDateSuffix(start, period, format);
+      expect(parsePartitionDate(`t_${suffix}`, period, format)).toEqual(start);
+    }
+  });
+
+  it("throws when a partition name doesn't match its format", () => {
+    expect(() =>
+      parsePartitionDate("t_p2026w33", "week", "y{YYYY}w{WW}"),
+    ).toThrow(/Unrecognized week partition suffix/);
+    expect(() =>
+      parsePartitionDate("t_2026w33", "week", "p{YYYY}w{WW}"),
+    ).toThrow(/Unrecognized week partition suffix/);
+  });
+
+  it("rejects malformed format templates", () => {
+    const date = new Date(Date.UTC(2027, 0, 4));
+    // {MM} is not a week placeholder.
+    expect(() => formatDateSuffix(date, "week", "p{YYYY}m{MM}")).toThrow(
+      /Unknown placeholder/,
+    );
+    // Missing the required {WW}.
+    expect(() => formatDateSuffix(date, "week", "p{YYYY}")).toThrow(
+      /missing required placeholder/,
+    );
+    // Unsafe literal characters (uppercase, hyphen).
+    expect(() => formatDateSuffix(date, "week", "P-{YYYY}w{WW}")).toThrow(
+      /Malformed week partition format/,
+    );
+    // Underscore is reserved: the suffix is the text after the table name's
+    // last "_", so a literal "_" would render an unparseable name.
+    expect(() => formatDateSuffix(date, "week", "p{YYYY}_w{WW}")).toThrow(
+      /Malformed week partition format/,
+    );
+  });
+});
+
 describe("parseRangeBound", () => {
   it("parses a DEFAULT bound", () => {
     expect(parseRangeBound("DEFAULT")).toEqual({

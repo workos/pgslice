@@ -9,6 +9,12 @@ export class TableSettings {
     readonly column: string,
     readonly period: Period,
     readonly cast: Cast,
+    /**
+     * Optional partition-name format template (e.g. `p{YYYY}w{WW}`). When
+     * absent, the period's standard suffix is used. Lets a retrofitted table
+     * keep its existing naming convention; see {@link formatDateSuffix}.
+     */
+    readonly format?: string,
   ) {}
 
   /**
@@ -20,6 +26,7 @@ export class TableSettings {
     let column: string | undefined;
     let period: Period | undefined;
     let cast: Cast | undefined;
+    let format: string | undefined;
 
     for (const part of parts) {
       const [key, value] = part.split(":");
@@ -29,11 +36,15 @@ export class TableSettings {
         period = value;
       } else if (key === "cast" && isValidCast(value)) {
         cast = value;
+      } else if (key === "format" && value) {
+        // Stored verbatim; validated when rendered/parsed (compileFormat), so a
+        // mistyped template fails loudly at add_partitions time rather than here.
+        format = value;
       }
     }
 
     if (column && period && cast) {
-      return new TableSettings(column, period, cast);
+      return new TableSettings(column, period, cast, format);
     }
 
     return null;

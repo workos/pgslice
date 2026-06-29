@@ -81,6 +81,8 @@ export interface DateRangesOptions {
   past: number;
   /** Number of future partitions to include */
   future: number;
+  /** Partition-name format template (defaults to the period's standard suffix). */
+  format?: string;
 }
 
 /**
@@ -124,73 +126,215 @@ export function advanceDate(date: Date, period: Period, count: number): Date {
 }
 
 /**
- * Formats a date as a partition suffix based on the period.
+ * A partition-name suffix is a tiny template of literal characters and
+ * `{PLACEHOLDER}` tokens. The placeholders available depend on the period, and
+ * each resolves to the *same* date component pgslice already uses — so a custom
+ * format only changes the rendered string, never which dates a partition
+ * covers. For weeks the year/week are ISO (week-year + ISO week); for
+ * day/month/year they are the calendar fields.
+ *
+ *   week:  {YYYY} = ISO week-year, {WW} = ISO week (01–53)   default "{YYYY}w{WW}"
+ *   month: {YYYY} = year,          {MM} = month (01–12)      default "{YYYY}{MM}"
+ *   day:   {YYYY}, {MM}, {DD}                                default "{YYYY}{MM}{DD}"
+ *   year:  {YYYY}                                            default "{YYYY}"
+ *
+ * Examples: "p{YYYY}w{WW}" → "p2027w01", "y{YYYY}m{MM}" → "y2027m05".
  */
-export function formatDateSuffix(date: Date, period: Period): string {
-  const year = date.getUTCFullYear().toString();
-  const month = (date.getUTCMonth() + 1).toString().padStart(2, "0");
-  const day = date.getUTCDate().toString().padStart(2, "0");
+interface PlaceholderSpec {
+  /** Renders the placeholder's value from a period-start date. */
+  render: (date: Date) => string;
+  /** Regex (without a capturing group) matching the rendered value. */
+  pattern: string;
+}
+
+interface PeriodFormat {
+  placeholders: Record<string, PlaceholderSpec>;
+  defaultFormat: string;
+  /** Rebuilds the period-start date from parsed placeholder values. */
+  reconstruct: (values: Record<string, number>) => Date;
+}
+
+const pad = (value: number, width: number): string =>
+  value.toString().padStart(width, "0");
+
+function periodFormat(period: Period): PeriodFormat {
+  const calendarYear: PlaceholderSpec = {
+    render: (date) => pad(date.getUTCFullYear(), 4),
+    pattern: "\\d{4}",
+  };
+  const calendarMonth: PlaceholderSpec = {
+    render: (date) => pad(date.getUTCMonth() + 1, 2),
+    pattern: "(?:0[1-9]|1[0-2])",
+  };
 
   switch (period) {
     case "day":
-      return `${year}${month}${day}`;
-    case "week": {
-      const { isoYear, isoWeek } = isoWeekInfo(date);
-      return `${isoYear}w${isoWeek.toString().padStart(2, "0")}`;
-    }
+      return {
+        placeholders: {
+          YYYY: calendarYear,
+          MM: calendarMonth,
+          DD: {
+            render: (date) => pad(date.getUTCDate(), 2),
+            pattern: "(?:0[1-9]|[12]\\d|3[01])",
+          },
+        },
+        defaultFormat: "{YYYY}{MM}{DD}",
+        reconstruct: (v) => new Date(Date.UTC(v.YYYY, v.MM - 1, v.DD)),
+      };
+    case "week":
+      return {
+        placeholders: {
+          YYYY: {
+            render: (date) => pad(isoWeekInfo(date).isoYear, 4),
+            pattern: "\\d{4}",
+          },
+          WW: {
+            render: (date) => pad(isoWeekInfo(date).isoWeek, 2),
+            pattern: "(?:0[1-9]|[1-4]\\d|5[0-3])",
+          },
+        },
+        defaultFormat: "{YYYY}w{WW}",
+        reconstruct: (v) => isoWeekToMonday(v.YYYY, v.WW),
+      };
     case "month":
-      return `${year}${month}`;
+      return {
+        placeholders: { YYYY: calendarYear, MM: calendarMonth },
+        defaultFormat: "{YYYY}{MM}",
+        reconstruct: (v) => new Date(Date.UTC(v.YYYY, v.MM - 1, 1)),
+      };
     case "year":
-      return year;
+      return {
+        placeholders: { YYYY: calendarYear },
+        defaultFormat: "{YYYY}",
+        reconstruct: (v) => new Date(Date.UTC(v.YYYY, 0, 1)),
+      };
   }
 }
 
+type FormatSegment = { placeholder: string } | { literal: string };
+
+const FORMAT_TOKEN = /\{([A-Z]+)\}|([^{}]+)/g;
+
 /**
- * Parses a partition table name to extract the date from its suffix.
- * The suffix is expected to be the last underscore-separated component.
+ * Splits a format template into ordered literal/placeholder segments,
+ * validating that every placeholder is known for the period, every literal is
+ * a safe identifier fragment, and every required placeholder appears exactly
+ * once. Throws on a malformed template so a mistyped settings comment fails
+ * loudly rather than producing an unusable partition name.
+ */
+function compileFormat(
+  period: Period,
+  template: string,
+): { segments: FormatSegment[]; order: string[] } {
+  // Literals are restricted to [a-z0-9] (no "_"): a partition is named
+  // `<table>_<suffix>` and the suffix is recovered by splitting on the last
+  // "_" (see parsePartitionDate), so an underscore inside the suffix template
+  // would make the rendered name unparseable.
+  if (!/^(?:[a-z0-9]+|\{[A-Z]+\})+$/.test(template)) {
+    throw new Error(
+      `Malformed ${period} partition format "${template}"; use [a-z0-9] literals and {PLACEHOLDER} tokens`,
+    );
+  }
+
+  const { placeholders } = periodFormat(period);
+  const segments: FormatSegment[] = [];
+  const order: string[] = [];
+
+  for (const match of template.matchAll(FORMAT_TOKEN)) {
+    const [, placeholder, literal] = match;
+    if (placeholder !== undefined) {
+      if (!(placeholder in placeholders)) {
+        throw new Error(
+          `Unknown placeholder "{${placeholder}}" in ${period} partition format "${template}"`,
+        );
+      }
+      if (order.includes(placeholder)) {
+        throw new Error(
+          `Duplicate placeholder "{${placeholder}}" in ${period} partition format "${template}"`,
+        );
+      }
+      segments.push({ placeholder });
+      order.push(placeholder);
+    } else if (literal !== undefined) {
+      segments.push({ literal });
+    }
+  }
+
+  const missing = Object.keys(placeholders).filter(
+    (name) => !order.includes(name),
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `${period} partition format "${template}" is missing required placeholder(s): ${missing
+        .map((name) => `{${name}}`)
+        .join(", ")}`,
+    );
+  }
+
+  return { segments, order };
+}
+
+/**
+ * Renders a partition-name suffix for the period-start `date`, using the given
+ * format template (or the period's default suffix when omitted).
+ */
+export function formatDateSuffix(
+  date: Date,
+  period: Period,
+  format?: string,
+): string {
+  const { placeholders, defaultFormat } = periodFormat(period);
+  const { segments } = compileFormat(period, format ?? defaultFormat);
+  return segments
+    .map((segment) =>
+      "literal" in segment
+        ? segment.literal
+        : placeholders[segment.placeholder].render(date),
+    )
+    .join("");
+}
+
+/**
+ * Parses a partition table name back to its period-start date, inverting
+ * {@link formatDateSuffix} for the same period + format. The suffix is the last
+ * underscore-separated component. Throws if the suffix doesn't match the format
+ * (e.g. a legacy-named or out-of-range partition), so misuse on a
+ * differently-named table is immediately visible.
  */
 export function parsePartitionDate(
   partitionName: string,
   period: Period,
+  format?: string,
 ): Date {
   const suffix = partitionName.split("_").pop();
   if (!suffix) {
     throw new Error(`Invalid partition name: ${partitionName}`);
   }
 
-  switch (period) {
-    case "day": {
-      // Format: YYYYMMDD
-      const year = parseInt(suffix.slice(0, 4), 10);
-      const month = parseInt(suffix.slice(4, 6), 10) - 1;
-      const day = parseInt(suffix.slice(6, 8), 10);
-      return new Date(Date.UTC(year, month, day));
-    }
-    case "week": {
-      // Format: <ISO year>w<ISO week>, e.g. "2026w32" (week 01–53). A
-      // legacy-prefixed or out-of-range suffix (e.g. "y2026w03", "2026w00",
-      // "2026w54") would yield a wrong/Invalid Date; fail loudly instead so
-      // misuse on a legacy-named table is immediately visible.
-      if (!/^\d{4}w(0[1-9]|[1-4]\d|5[0-3])$/.test(suffix)) {
-        throw new Error(
-          `Unrecognized week partition suffix "${suffix}" in "${partitionName}"`,
-        );
-      }
-      const [isoYear, isoWeek] = suffix.split("w");
-      return isoWeekToMonday(parseInt(isoYear, 10), parseInt(isoWeek, 10));
-    }
-    case "month": {
-      // Format: YYYYMM
-      const year = parseInt(suffix.slice(0, 4), 10);
-      const month = parseInt(suffix.slice(4, 6), 10) - 1;
-      return new Date(Date.UTC(year, month, 1));
-    }
-    case "year": {
-      // Format: YYYY
-      const year = parseInt(suffix, 10);
-      return new Date(Date.UTC(year, 0, 1));
-    }
+  const { placeholders, defaultFormat, reconstruct } = periodFormat(period);
+  const { segments, order } = compileFormat(period, format ?? defaultFormat);
+  const regex = new RegExp(
+    `^${segments
+      .map((segment) =>
+        "literal" in segment
+          ? segment.literal
+          : `(${placeholders[segment.placeholder].pattern})`,
+      )
+      .join("")}$`,
+  );
+
+  const match = suffix.match(regex);
+  if (!match) {
+    throw new Error(
+      `Unrecognized ${period} partition suffix "${suffix}" in "${partitionName}"`,
+    );
   }
+
+  const values: Record<string, number> = {};
+  order.forEach((placeholder, index) => {
+    values[placeholder] = parseInt(match[index + 1], 10);
+  });
+  return reconstruct(values);
 }
 
 /**
@@ -201,6 +345,7 @@ export class DateRanges implements Iterable<DateRange> {
   readonly #period: Period;
   readonly #past: number;
   readonly #future: number;
+  readonly #format?: string;
 
   constructor(options: DateRangesOptions) {
     this.#today = options.today
@@ -209,13 +354,14 @@ export class DateRanges implements Iterable<DateRange> {
     this.#period = options.period;
     this.#past = options.past;
     this.#future = options.future;
+    this.#format = options.format;
   }
 
   *[Symbol.iterator](): Generator<DateRange> {
     for (let n = -this.#past; n <= this.#future; n++) {
       const start = advanceDate(this.#today, this.#period, n);
       const end = advanceDate(start, this.#period, 1);
-      const suffix = formatDateSuffix(start, this.#period);
+      const suffix = formatDateSuffix(start, this.#period, this.#format);
 
       yield { start, end, suffix };
     }
@@ -385,6 +531,7 @@ export function* extendRanges(options: {
   anchorStart: Date;
   period: Period;
   horizon: Date;
+  format?: string;
 }): Generator<DateRange> {
   let start = options.anchorStart;
   for (
@@ -394,7 +541,11 @@ export function* extendRanges(options: {
     count++
   ) {
     const end = advanceDate(start, options.period, 1);
-    yield { start, end, suffix: formatDateSuffix(start, options.period) };
+    yield {
+      start,
+      end,
+      suffix: formatDateSuffix(start, options.period, options.format),
+    };
     start = end;
   }
 }
@@ -408,6 +559,7 @@ export function* extendRangesBackward(options: {
   anchorEnd: Date;
   period: Period;
   horizon: Date;
+  format?: string;
 }): Generator<DateRange> {
   let end = options.anchorEnd;
   for (let count = 0; count < MAX_GENERATED_PARTITIONS; count++) {
@@ -417,7 +569,11 @@ export function* extendRangesBackward(options: {
     if (start.getTime() < options.horizon.getTime()) {
       break;
     }
-    yield { start, end, suffix: formatDateSuffix(start, options.period) };
+    yield {
+      start,
+      end,
+      suffix: formatDateSuffix(start, options.period, options.format),
+    };
     end = start;
   }
 }

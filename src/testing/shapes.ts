@@ -49,10 +49,12 @@ export async function setSettings(
   column: string,
   period: Period,
   cast: Cast,
+  format?: string,
 ): Promise<void> {
+  const formatPart = format ? `,format:${format}` : "";
   await tx.query(
     sql.unsafe`COMMENT ON TABLE ${ident(qualified)} IS ${sql.literalValue(
-      `column:${column},period:${period},cast:${cast},version:3`,
+      `column:${column},period:${period},cast:${cast},version:3${formatPart}`,
     )}`,
   );
 }

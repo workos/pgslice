@@ -89,10 +89,15 @@ function derivePartitionTimeFilter(
 
   const firstPartition = partitions[0];
   const lastPartition = partitions[partitions.length - 1];
-  const startingTime = parsePartitionDate(firstPartition.name, settings.period);
+  const startingTime = parsePartitionDate(
+    firstPartition.name,
+    settings.period,
+    settings.format,
+  );
   const lastPartitionDate = parsePartitionDate(
     lastPartition.name,
     settings.period,
+    settings.format,
   );
   const endingTime = advanceDate(lastPartitionDate, settings.period, 1);
 

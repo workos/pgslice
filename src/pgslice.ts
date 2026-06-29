@@ -377,6 +377,7 @@ export class Pgslice {
             period: settings.period,
             past,
             future,
+            format: settings.format,
           });
         } else {
           // Existing partitioned table: extend contiguously from the current
@@ -402,6 +403,7 @@ export class Pgslice {
               anchorStart: maxUpper,
               period: settings.period,
               horizon,
+              format: settings.format,
             })) {
               candidates.push(range);
             }
@@ -415,6 +417,7 @@ export class Pgslice {
               anchorEnd: minLower,
               period: settings.period,
               horizon,
+              format: settings.format,
             })) {
               candidates.push(range);
             }
