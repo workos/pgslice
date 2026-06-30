@@ -494,6 +494,20 @@ export function minLowerBound(ranges: readonly ExistingRange[]): Date | null {
 }
 
 /**
+ * Whether a Date sits exactly on a UTC-midnight boundary. Bounds-anchored
+ * extension emits new boundaries at UTC midnight (see formatDateForSql), so it
+ * can only abut existing partitions whose own boundaries are UTC-midnight.
+ */
+export function isUtcMidnight(date: Date): boolean {
+  return (
+    date.getUTCHours() === 0 &&
+    date.getUTCMinutes() === 0 &&
+    date.getUTCSeconds() === 0 &&
+    date.getUTCMilliseconds() === 0
+  );
+}
+
+/**
  * Whether a candidate `[start, end)` overlaps an existing partition's range,
  * treating `MINVALUE`/`MAXVALUE` as -/+ infinity. The DEFAULT partition never
  * overlaps (it only absorbs rows no explicit range claims).

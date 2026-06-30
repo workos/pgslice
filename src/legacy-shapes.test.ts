@@ -105,6 +105,37 @@ describe("legacy partitioned-table shapes", () => {
     });
   });
 
+  describe("non-midnight partition boundaries (unsupported)", () => {
+    test("rejects loudly instead of silently creating nothing", async ({
+      pgslice,
+      transaction,
+    }) => {
+      await nativeParent(
+        transaction,
+        "skewed",
+        "created_at",
+        TSTZ,
+        "month",
+        "timestamptz",
+      );
+      // An existing partition whose bounds sit at 06:00 UTC, not midnight.
+      await addChild(
+        transaction,
+        "skewed",
+        "skewed_202602",
+        "2026-02-01 06:00:00+00",
+        "2026-03-01 06:00:00+00",
+      );
+
+      // New bounds are emitted at UTC midnight, so this shape can't be extended
+      // contiguously; it must fail loudly rather than return [] ("no new
+      // partitions needed") while forward coverage silently stalls.
+      await expect(
+        pgslice.addPartitions(transaction, { table: "skewed", future: 2 }),
+      ).rejects.toThrow(/midnight/i);
+    });
+  });
+
   describe("monthly, date key, with a parent UNIQUE + CHECK", () => {
     test("extends and new partitions inherit the composite PK, UNIQUE, and CHECK", async ({
       pgslice,

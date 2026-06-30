@@ -35,6 +35,7 @@ import {
   advanceDate,
   extendRanges,
   extendRangesBackward,
+  isUtcMidnight,
   maxUpperBound,
   minLowerBound,
   rangeOverlaps,
@@ -398,6 +399,16 @@ export class Pgslice {
           const maxUpper = maxUpperBound(existingRanges);
           const unboundedAbove = finiteRanges.some((r) => r.upperUnbounded);
           if (maxUpper && !unboundedAbove) {
+            // Bounds-anchored extension emits new boundaries at UTC midnight
+            // (see formatDateForSql), so it can only continue a table whose
+            // existing boundaries are UTC-midnight too. A non-midnight anchor
+            // otherwise yields a silent no-op (the midnight-rounded horizon can
+            // fall short of it) or a CREATE-time overlap — reject it loudly.
+            if (!isUtcMidnight(maxUpper)) {
+              throw new Error(
+                `${targetTable.name}: existing partition boundary ${maxUpper.toISOString()} is not UTC-midnight aligned; bounds-anchored extension only supports midnight-aligned boundaries`,
+              );
+            }
             const horizon = advanceDate(today, settings.period, future);
             for (const range of extendRanges({
               anchorStart: maxUpper,
@@ -412,6 +423,12 @@ export class Pgslice {
           const minLower = minLowerBound(existingRanges);
           const unboundedBelow = finiteRanges.some((r) => r.lowerUnbounded);
           if (minLower && !unboundedBelow && past > 0) {
+            // Same UTC-midnight requirement as the forward anchor above.
+            if (!isUtcMidnight(minLower)) {
+              throw new Error(
+                `${targetTable.name}: existing partition boundary ${minLower.toISOString()} is not UTC-midnight aligned; bounds-anchored extension only supports midnight-aligned boundaries`,
+              );
+            }
             const horizon = advanceDate(today, settings.period, -past);
             for (const range of extendRangesBackward({
               anchorEnd: minLower,

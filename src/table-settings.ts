@@ -29,7 +29,12 @@ export class TableSettings {
     let format: string | undefined;
 
     for (const part of parts) {
-      const [key, value] = part.split(":");
+      // Split on the first ":" only, so a value that itself contains a colon
+      // (e.g. a mistyped format template) is preserved and validated downstream
+      // rather than silently truncated at the second colon.
+      const sep = part.indexOf(":");
+      const key = sep === -1 ? part : part.slice(0, sep);
+      const value = sep === -1 ? "" : part.slice(sep + 1);
       if (key === "column") {
         column = value;
       } else if (key === "period" && isValidPeriod(value)) {
