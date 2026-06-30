@@ -7,6 +7,8 @@ import {
 } from "slonik";
 import { createQueryLoggingInterceptor } from "slonik-interceptor-query-logging";
 
+import { z } from "zod";
+
 import type {
   AddPartitionsOptions,
   AnalyzeOptions,
@@ -15,6 +17,9 @@ import type {
   EnableMirroringOptions,
   FillBatchResult,
   FillOptions,
+  MaintainOptions,
+  MaintainResult,
+  PartitionModel,
   Period,
   PrepOptions,
   StatusOptions,
@@ -494,6 +499,140 @@ export class Pgslice {
         return created;
       }),
     );
+  }
+
+  /**
+   * Maintains every managed partitioned table the connection can see: each
+   * partitioned parent (`relkind = 'p'`) carrying a valid pgslice settings
+   * comment is discovered from the catalog and extended via {@link addPartitions}.
+   * New partitioned tables are therefore picked up automatically with no
+   * per-table configuration.
+   *
+   * The native-vs-pgslice distinction is handled by {@link addPartitions}: it
+   * skips the per-partition primary key when the parent owns one (the inherited
+   * composite key and any partitioned indexes propagate automatically) and adds
+   * a per-partition key otherwise. New partitions are created with the default
+   * replica identity, so each leaf's row identity is its own (or inherited)
+   * primary key and no replica-identity DDL is required. After extending each
+   * table this verifies every leaf has a usable replica identity, surfacing a
+   * misconfigured table rather than silently shipping a CDC-unsafe partition.
+   *
+   * Each table is maintained independently: a failure on one table (for example
+   * a non-empty DEFAULT partition that blocks creating the next one) is recorded
+   * on that table's result and does not stop the rest of the fleet.
+   */
+  async maintain(
+    connection: DatabasePoolConnection,
+    options: MaintainOptions,
+  ): Promise<MaintainResult[]> {
+    const past = options.past ?? 0;
+    const future = options.future ?? 0;
+    // Capture one reference instant for the whole fleet, so a run that straddles
+    // a period boundary uses a consistent horizon for every table.
+    const now = options.now ?? new Date();
+
+    const managed = await this.#discoverManagedTables(
+      connection,
+      options.schema,
+    );
+
+    const results: MaintainResult[] = [];
+    for (const table of managed) {
+      try {
+        const partitionsCreated = await this.addPartitions(connection, {
+          table: table.toString(),
+          past,
+          future,
+          tablespace: options.tablespace,
+          inheritGrants: options.inheritGrants,
+          now,
+        });
+
+        const { model, partitionCount, unsafePartitions } =
+          await connection.transaction(async (tx) => {
+            const parentPrimaryKey = await table.primaryKeyColumns(tx);
+            const partitions = await table.partitions(tx);
+            const unsafe = await table.unsafeReplicaIdentityPartitions(tx);
+            const model: PartitionModel =
+              parentPrimaryKey.length > 0 ? "native" : "pgslice";
+            return {
+              model,
+              partitionCount: partitions.length,
+              unsafePartitions: unsafe,
+            };
+          });
+
+        results.push({
+          table: table.toString(),
+          model,
+          partitionsCreated,
+          partitionCount,
+          replicaIdentityReady: unsafePartitions.length === 0,
+          unsafePartitions,
+          error: null,
+        });
+      } catch (error) {
+        results.push({
+          table: table.toString(),
+          model: null,
+          partitionsCreated: [],
+          partitionCount: 0,
+          replicaIdentityReady: false,
+          unsafePartitions: [],
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Discovers the managed partitioned parents visible to this connection: a
+   * top-level partitioned table (`relkind = 'p'`, not itself a partition) whose
+   * table comment parses as pgslice settings. Optionally restricted to a single
+   * schema. The same `pg_partitioned_table`-style catalog scan the runway
+   * monitor uses, so scheduler and monitor share one source of truth.
+   */
+  async #discoverManagedTables(
+    connection: DatabasePoolConnection,
+    schema?: string,
+  ): Promise<Table[]> {
+    const schemaFilter = schema
+      ? sql.fragment`AND n.nspname = ${schema}`
+      : sql.fragment``;
+
+    const rows = await connection.any(
+      sql.type(
+        z.object({
+          schema: z.string(),
+          name: z.string(),
+          comment: z.string().nullable(),
+        }),
+      )`
+        SELECT
+          n.nspname AS schema,
+          c.relname AS name,
+          obj_description(c.oid, 'pg_class') AS comment
+        FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'p'
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND NOT EXISTS (
+            SELECT 1 FROM pg_inherits inh WHERE inh.inhrelid = c.oid
+          )
+          ${schemaFilter}
+        ORDER BY n.nspname, c.relname
+      `,
+    );
+
+    return rows.flatMap((row) => {
+      if (!row.comment) {
+        return [];
+      }
+      const settings = TableSettings.parseFromComment(row.comment);
+      return settings ? [new Table(row.schema, row.name)] : [];
+    });
   }
 
   /**

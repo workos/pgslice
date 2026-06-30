@@ -225,3 +225,61 @@ export interface TableStatus {
   retiredMirrorTriggerExists: boolean;
   originalIsPartitioned: boolean;
 }
+
+/**
+ * Options for the `maintain` command.
+ */
+export interface MaintainOptions {
+  past?: number;
+  future?: number;
+  /**
+   * Restrict maintenance to partitioned tables in this schema. When omitted,
+   * every managed partitioned table the connection can see is maintained.
+   */
+  schema?: string;
+  tablespace?: string;
+  inheritGrants?: boolean;
+  /**
+   * The reference "now" for choosing each table's partition horizon. Defaults
+   * to a single instant captured when the run starts, so a fleet run that
+   * straddles a period boundary uses one consistent horizon for every table.
+   */
+  now?: Date;
+}
+
+/**
+ * How a managed table's primary key is owned, which decides how
+ * `add_partitions` treats each new partition.
+ * - "native": the partitioned parent owns the (often composite) primary key, so
+ *   Postgres propagates it — and any partitioned indexes — to each new partition.
+ * - "pgslice": the classic pgslice model where the parent has no primary key and
+ *   each partition owns its own.
+ */
+export type PartitionModel = "native" | "pgslice";
+
+/**
+ * Outcome of maintaining a single managed table.
+ */
+export interface MaintainResult {
+  table: string;
+  /** The partitioning model, or null if maintenance failed before it was determined. */
+  model: PartitionModel | null;
+  partitionsCreated: string[];
+  partitionCount: number;
+  /**
+   * Whether every leaf partition has a replica identity usable for logical
+   * replication. New partitions are created with the default replica identity,
+   * so each leaf's row identity is its own (or inherited) primary key and no
+   * replica-identity DDL is required; this read-only flag surfaces a leaf
+   * lacking a usable identity rather than shipping a CDC-unsafe partition.
+   */
+  replicaIdentityReady: boolean;
+  /** Leaf partitions that would not be CDC-safe (no usable replica identity). */
+  unsafePartitions: string[];
+  /**
+   * Error message if maintaining this table failed; null on success. One
+   * table's failure (e.g. a non-empty DEFAULT blocking the next partition) is
+   * recorded here and does not stop the rest of the fleet from being extended.
+   */
+  error: string | null;
+}
