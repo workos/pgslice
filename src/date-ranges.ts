@@ -181,21 +181,36 @@ function periodFormat(period: Period): PeriodFormat {
         defaultFormat: "{YYYY}{MM}{DD}",
         reconstruct: (v) => new Date(Date.UTC(v.YYYY, v.MM - 1, v.DD)),
       };
-    case "week":
+    case "week": {
+      // Both placeholders derive from the same ISO-week computation; memoize it
+      // so a single suffix render does the week arithmetic once, not twice.
+      let memoTime = Number.NaN;
+      let memoInfo: { isoYear: number; isoWeek: number } | undefined;
+      const weekInfo = (date: Date): { isoYear: number; isoWeek: number } => {
+        const time = date.getTime();
+        if (memoInfo !== undefined && time === memoTime) {
+          return memoInfo;
+        }
+        const info = isoWeekInfo(date);
+        memoTime = time;
+        memoInfo = info;
+        return info;
+      };
       return {
         placeholders: {
           YYYY: {
-            render: (date) => pad(isoWeekInfo(date).isoYear, 4),
+            render: (date) => pad(weekInfo(date).isoYear, 4),
             pattern: "\\d{4}",
           },
           WW: {
-            render: (date) => pad(isoWeekInfo(date).isoWeek, 2),
+            render: (date) => pad(weekInfo(date).isoWeek, 2),
             pattern: "(?:0[1-9]|[1-4]\\d|5[0-3])",
           },
         },
         defaultFormat: "{YYYY}w{WW}",
         reconstruct: (v) => isoWeekToMonday(v.YYYY, v.WW),
       };
+    }
     case "month":
       return {
         placeholders: { YYYY: calendarYear, MM: calendarMonth },
@@ -215,6 +230,11 @@ type FormatSegment = { placeholder: string } | { literal: string };
 
 const FORMAT_TOKEN = /\{([A-Z]+)\}|([^{}]+)/g;
 
+const compiledFormatCache = new Map<
+  string,
+  { segments: FormatSegment[]; order: string[] }
+>();
+
 /**
  * Splits a format template into ordered literal/placeholder segments,
  * validating that every placeholder is known for the period, every literal is
@@ -226,6 +246,15 @@ function compileFormat(
   period: Period,
   template: string,
 ): { segments: FormatSegment[]; order: string[] } {
+  // Compiling a template is a regex scan + allocation; cache by (period,
+  // template) so a large back-fill rendering thousands of suffixes doesn't
+  // recompile the same spec on every call.
+  const cacheKey = `${period} ${template}`;
+  const cached = compiledFormatCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   // Literals are restricted to [a-z0-9] (no "_"): a partition is named
   // `<table>_<suffix>` and the suffix is recovered by splitting on the last
   // "_" (see parsePartitionDate), so an underscore inside the suffix template
@@ -271,7 +300,9 @@ function compileFormat(
     );
   }
 
-  return { segments, order };
+  const compiled = { segments, order };
+  compiledFormatCache.set(cacheKey, compiled);
+  return compiled;
 }
 
 /**

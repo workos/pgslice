@@ -7,8 +7,6 @@ import {
 } from "slonik";
 import { createQueryLoggingInterceptor } from "slonik-interceptor-query-logging";
 
-import { z } from "zod";
-
 import type {
   AddPartitionsOptions,
   AnalyzeOptions,
