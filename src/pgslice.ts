@@ -526,7 +526,15 @@ export class Pgslice {
     options: MaintainOptions,
   ): Promise<MaintainResult[]> {
     const past = options.past ?? 0;
-    const future = options.future ?? 0;
+    // Future runway is set per period: "N periods" is very different runway for a
+    // weekly vs a monthly vs a yearly table, so each table uses the horizon for
+    // its own period, giving the fleet comparable forward coverage.
+    const futureByPeriod: Record<Period, number> = {
+      day: options.futureDaily ?? 90,
+      week: options.futureWeekly ?? 26,
+      month: options.futureMonthly ?? 6,
+      year: options.futureYearly ?? 1,
+    };
     // Capture one reference instant for the whole fleet, so a run that straddles
     // a period boundary uses a consistent horizon for every table.
     const now = options.now ?? new Date();
@@ -537,12 +545,12 @@ export class Pgslice {
     );
 
     const results: MaintainResult[] = [];
-    for (const table of managed) {
+    for (const { table, period } of managed) {
       try {
         const partitionsCreated = await this.addPartitions(connection, {
           table: table.toString(),
           past,
-          future,
+          future: futureByPeriod[period],
           tablespace: options.tablespace,
           inheritGrants: options.inheritGrants,
           now,
@@ -597,7 +605,7 @@ export class Pgslice {
   async #discoverManagedTables(
     connection: DatabasePoolConnection,
     schema?: string,
-  ): Promise<Table[]> {
+  ): Promise<Array<{ table: Table; period: Period }>> {
     const schemaFilter = schema
       ? sql.fragment`AND n.nspname = ${schema}`
       : sql.fragment``;
@@ -631,7 +639,9 @@ export class Pgslice {
         return [];
       }
       const settings = TableSettings.parseFromComment(row.comment);
-      return settings ? [new Table(row.schema, row.name)] : [];
+      return settings
+        ? [{ table: new Table(row.schema, row.name), period: settings.period }]
+        : [];
     });
   }
 

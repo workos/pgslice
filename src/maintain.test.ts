@@ -173,7 +173,12 @@ describe("Pgslice.maintain (fleet)", () => {
       pgslice,
       transaction,
     }) => {
-      const results = await pgslice.maintain(transaction, { future: 3 });
+      const results = await pgslice.maintain(transaction, {
+        futureDaily: 3,
+        futureWeekly: 3,
+        futureMonthly: 3,
+        futureYearly: 3,
+      });
 
       expect(results.map((r) => r.table).sort()).toEqual(
         [
@@ -195,7 +200,12 @@ describe("Pgslice.maintain (fleet)", () => {
       pgslice,
       transaction,
     }) => {
-      const results = await pgslice.maintain(transaction, { future: 3 });
+      const results = await pgslice.maintain(transaction, {
+        futureDaily: 3,
+        futureWeekly: 3,
+        futureMonthly: 3,
+        futureYearly: 3,
+      });
       const model = new Map(results.map((r) => [r.table, r.model]));
 
       for (const native of [
@@ -222,7 +232,12 @@ describe("Pgslice.maintain (fleet)", () => {
       pgslice,
       transaction,
     }) => {
-      const results = await pgslice.maintain(transaction, { future: 3 });
+      const results = await pgslice.maintain(transaction, {
+        futureDaily: 3,
+        futureWeekly: 3,
+        futureMonthly: 3,
+        futureYearly: 3,
+      });
       const created = new Map(
         results.map((r) => [r.table, [...r.partitionsCreated].sort()]),
       );
@@ -275,7 +290,12 @@ describe("Pgslice.maintain (fleet)", () => {
       pgslice,
       transaction,
     }) => {
-      const results = await pgslice.maintain(transaction, { future: 3 });
+      const results = await pgslice.maintain(transaction, {
+        futureDaily: 3,
+        futureWeekly: 3,
+        futureMonthly: 3,
+        futureYearly: 3,
+      });
       for (const result of results) {
         expect(result.replicaIdentityReady).toBe(true);
         expect(result.unsafePartitions).toEqual([]);
@@ -286,8 +306,18 @@ describe("Pgslice.maintain (fleet)", () => {
       pgslice,
       transaction,
     }) => {
-      await pgslice.maintain(transaction, { future: 3 });
-      const second = await pgslice.maintain(transaction, { future: 3 });
+      await pgslice.maintain(transaction, {
+        futureDaily: 3,
+        futureWeekly: 3,
+        futureMonthly: 3,
+        futureYearly: 3,
+      });
+      const second = await pgslice.maintain(transaction, {
+        futureDaily: 3,
+        futureWeekly: 3,
+        futureMonthly: 3,
+        futureYearly: 3,
+      });
       for (const result of second) {
         expect(result.partitionsCreated).toEqual([]);
       }
@@ -298,7 +328,10 @@ describe("Pgslice.maintain (fleet)", () => {
       transaction,
     }) => {
       const results = await pgslice.maintain(transaction, {
-        future: 3,
+        futureDaily: 3,
+        futureWeekly: 3,
+        futureMonthly: 3,
+        futureYearly: 3,
         schema: "analytics",
       });
       expect(results.map((r) => r.table)).toEqual(["analytics.visits"]);
@@ -330,7 +363,12 @@ describe("Pgslice.maintain (fleet)", () => {
         sql.unsafe`GRANT SELECT ON TABLE posts TO replica_reader_maint`,
       );
 
-      await pgslice.maintain(transaction, { future: 1 });
+      await pgslice.maintain(transaction, {
+        futureDaily: 1,
+        futureWeekly: 1,
+        futureMonthly: 1,
+        futureYearly: 1,
+      });
 
       const pkDefs = await transaction.any(
         sql.type(z.object({ def: z.string() }))`
@@ -378,7 +416,12 @@ describe("Pgslice.maintain (fleet)", () => {
         ["id", "created_at"],
       );
 
-      const results = await pgslice.maintain(transaction, { future: 1 });
+      const results = await pgslice.maintain(transaction, {
+        futureDaily: 1,
+        futureWeekly: 1,
+        futureMonthly: 1,
+        futureYearly: 1,
+      });
       expect(results[0].model).toBe("pgslice");
 
       const pkDefs = await transaction.any(
@@ -442,7 +485,12 @@ describe("Pgslice.maintain (fleet)", () => {
         REPLICA IDENTITY USING INDEX visits_ri_uidx
       `);
 
-      const results = await pgslice.maintain(transaction, { future: 1 });
+      const results = await pgslice.maintain(transaction, {
+        futureDaily: 1,
+        futureWeekly: 1,
+        futureMonthly: 1,
+        futureYearly: 1,
+      });
       expect(results[0].replicaIdentityReady).toBe(true);
 
       // The new partition auto-got a unique (id, created_at) index attached to
@@ -502,7 +550,12 @@ describe("Pgslice.maintain (fleet)", () => {
         ALTER TABLE weird_2026m01 REPLICA IDENTITY NOTHING
       `);
 
-      const results = await pgslice.maintain(transaction, { future: 1 });
+      const results = await pgslice.maintain(transaction, {
+        futureDaily: 1,
+        futureWeekly: 1,
+        futureMonthly: 1,
+        futureYearly: 1,
+      });
       const weird = results.find((r) => r.table === "public.weird");
 
       expect(weird?.replicaIdentityReady).toBe(false);
@@ -553,7 +606,12 @@ describe("Pgslice.maintain (fleet)", () => {
         "2026-02-01",
       );
 
-      const results = await pgslice.maintain(transaction, { future: 1 });
+      const results = await pgslice.maintain(transaction, {
+        futureDaily: 1,
+        futureWeekly: 1,
+        futureMonthly: 1,
+        futureYearly: 1,
+      });
       const blocked = results.find((r) => r.table === "public.blocked");
       const healthy = results.find((r) => r.table === "public.healthy");
 
@@ -564,6 +622,62 @@ describe("Pgslice.maintain (fleet)", () => {
       // The healthy table is extended despite the other table's failure.
       expect(healthy?.error).toBeNull();
       expect(healthy?.partitionsCreated).toEqual(["healthy_202602"]);
+    });
+  });
+
+  describe("per-period horizons", () => {
+    test("extends each table by the horizon for its own period", async ({
+      pgslice,
+      transaction,
+    }) => {
+      // One run over a monthly and a weekly table with different per-period
+      // futures. The weekly table (shorter period + larger future) must get
+      // strictly more new partitions than the monthly one — proving the horizon
+      // is applied per period, not uniformly.
+      await nativeParent(
+        transaction,
+        "m_tbl",
+        "created_at",
+        TS,
+        "month",
+        "date",
+      );
+      await addChild(
+        transaction,
+        "m_tbl",
+        "m_tbl_y2026m01",
+        "2026-01-01",
+        "2026-02-01",
+      );
+      await nativeParent(
+        transaction,
+        "w_tbl",
+        "created_at",
+        TS,
+        "week",
+        "date",
+      );
+      await addChild(
+        transaction,
+        "w_tbl",
+        "w_tbl_2026w02",
+        "2026-01-05",
+        "2026-01-12",
+      );
+
+      const results = await pgslice.maintain(transaction, {
+        futureMonthly: 2,
+        futureWeekly: 6,
+      });
+      const m = results.find((r) => r.table === "public.m_tbl");
+      const w = results.find((r) => r.table === "public.w_tbl");
+
+      expect(m?.error).toBeNull();
+      expect(w?.error).toBeNull();
+      const mCount = m?.partitionsCreated.length ?? 0;
+      const wCount = w?.partitionsCreated.length ?? 0;
+      expect(mCount).toBeGreaterThan(0);
+      expect(wCount).toBeGreaterThan(mCount);
     });
   });
 });

@@ -23,13 +23,14 @@ export class MaintainCommand extends BaseCommand {
     `,
     examples: [
       [
-        "Extend all managed tables three periods ahead",
-        "$0 maintain --future 3",
+        "Extend all managed tables with the default per-period horizons",
+        "$0 maintain",
       ],
       [
-        "Restrict to a single schema",
-        "$0 maintain --future 3 --schema analytics",
+        "Override one period's horizon (12 months of monthly runway)",
+        "$0 maintain --future-monthly 12",
       ],
+      ["Restrict to a single schema", "$0 maintain --schema analytics"],
     ],
   });
 
@@ -37,8 +38,20 @@ export class MaintainCommand extends BaseCommand {
     description: "Number of past partitions to add to each table",
     validator: t.cascade(t.isNumber(), [t.isInteger(), t.isAtLeast(0)]),
   });
-  future = Option.String("--future", "0", {
-    description: "Number of future partitions to add to each table",
+  futureDaily = Option.String("--future-daily", "90", {
+    description: "Future partitions to keep ahead for daily tables",
+    validator: t.cascade(t.isNumber(), [t.isInteger(), t.isAtLeast(0)]),
+  });
+  futureWeekly = Option.String("--future-weekly", "26", {
+    description: "Future partitions to keep ahead for weekly tables",
+    validator: t.cascade(t.isNumber(), [t.isInteger(), t.isAtLeast(0)]),
+  });
+  futureMonthly = Option.String("--future-monthly", "6", {
+    description: "Future partitions to keep ahead for monthly tables",
+    validator: t.cascade(t.isNumber(), [t.isInteger(), t.isAtLeast(0)]),
+  });
+  futureYearly = Option.String("--future-yearly", "1", {
+    description: "Future partitions to keep ahead for yearly tables",
     validator: t.cascade(t.isNumber(), [t.isInteger(), t.isAtLeast(0)]),
   });
   schema = Option.String("--schema", {
@@ -56,7 +69,10 @@ export class MaintainCommand extends BaseCommand {
     const results = await pgslice.start((connection) =>
       pgslice.maintain(connection, {
         past: this.past,
-        future: this.future,
+        futureDaily: this.futureDaily,
+        futureWeekly: this.futureWeekly,
+        futureMonthly: this.futureMonthly,
+        futureYearly: this.futureYearly,
         schema: this.schema,
         tablespace: this.tablespace,
         inheritGrants: this.inheritGrants,
