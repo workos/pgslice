@@ -25,7 +25,7 @@ export abstract class BaseCommand extends Command<Context> {
         new URL(this.getDatabaseUrl()),
       );
 
-      await this.perform(this.context.pgslice);
+      return await this.perform(this.context.pgslice);
     } catch (error) {
       if (error instanceof Error) {
         this.context.stderr.write(`${error.message}\n`);

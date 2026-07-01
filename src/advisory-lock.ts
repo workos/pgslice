@@ -16,8 +16,15 @@ export class AdvisoryLockError extends Error {
 
 export abstract class AdvisoryLock {
   /**
-   * Executes a handler while holding an advisory lock.
-   * The lock is automatically released when the handler completes or throws.
+   * Runs a handler while holding a transaction-scoped advisory lock. The lock is
+   * acquired on the given transaction and released automatically when that
+   * transaction commits or rolls back — so a handler that aborts the transaction
+   * cannot leak the lock, and there is no unlock query that could fail on an
+   * aborted transaction and mask the handler's error.
+   *
+   * Must be called inside a transaction (every pgslice command wraps it in
+   * `connection.transaction(...)`). For a lock that must span multiple
+   * transactions — e.g. a batched generator — use {@link acquire} instead.
    */
   static async withLock<T>(
     connection: CommonQueryMethods,
@@ -25,12 +32,11 @@ export abstract class AdvisoryLock {
     operation: string,
     handler: () => Promise<T>,
   ): Promise<T> {
-    const release = await this.acquire(connection, table, operation);
-    try {
-      return await handler();
-    } finally {
-      await release();
+    const key = await this.#getKey(connection, table, operation);
+    if (!(await this.#tryAcquireXact(connection, key))) {
+      throw new AdvisoryLockError(table, operation);
     }
+    return handler();
   }
 
   /**
@@ -75,6 +81,18 @@ export abstract class AdvisoryLock {
     const result = await connection.one(
       sql.type(z.object({ acquired: z.boolean() }))`
         SELECT pg_try_advisory_lock(${key}) AS acquired
+      `,
+    );
+    return result.acquired;
+  }
+
+  static async #tryAcquireXact(
+    connection: CommonQueryMethods,
+    key: bigint,
+  ): Promise<boolean> {
+    const result = await connection.one(
+      sql.type(z.object({ acquired: z.boolean() }))`
+        SELECT pg_try_advisory_xact_lock(${key}) AS acquired
       `,
     );
     return result.acquired;

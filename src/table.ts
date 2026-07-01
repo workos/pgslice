@@ -498,6 +498,43 @@ export class Table {
   }
 
   /**
+   * Returns the leaf partitions of this table that lack a replica identity
+   * usable for logical replication. A partition is unsafe when it has
+   * `REPLICA IDENTITY NOTHING`, or the default identity with no primary key —
+   * in either case Postgres rejects `UPDATE`/`DELETE` on a published table.
+   * Partitions covered by a primary key (the native parent-owned key or a
+   * per-partition key), or an explicit FULL / USING INDEX identity, are safe.
+   * Read-only: it only inspects the catalog and never emits replica-identity
+   * DDL. Walks the whole partition tree, so leaf partitions beneath a
+   * sub-partitioned child are inspected too — not just direct children.
+   */
+  async unsafeReplicaIdentityPartitions(
+    tx: CommonQueryMethods,
+  ): Promise<string[]> {
+    const rows = await tx.any(
+      sql.type(z.object({ name: z.string() }))`
+        SELECT leaf.relname AS name
+        FROM pg_partition_tree(${this.regclassLiteral}::regclass) tree
+          JOIN pg_class leaf ON leaf.oid = tree.relid
+        WHERE tree.isleaf
+          AND (
+            leaf.relreplident = 'n'
+            OR (
+              leaf.relreplident = 'd'
+              AND NOT EXISTS (
+                SELECT 1 FROM pg_index pk
+                WHERE pk.indrelid = leaf.oid AND pk.indisprimary
+              )
+            )
+          )
+        ORDER BY leaf.relname ASC
+      `,
+    );
+
+    return rows.map((r) => r.name);
+  }
+
+  /**
    * Fetches the partition settings from this table's comment.
    */
   async fetchSettings(

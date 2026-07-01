@@ -1,5 +1,5 @@
 import { describe, expect } from "vitest";
-import { createPool } from "slonik";
+import { createPool, sql } from "slonik";
 
 import { pgsliceTest as test } from "./testing/index.js";
 import { AdvisoryLock, AdvisoryLockError } from "./advisory-lock.js";
@@ -20,7 +20,9 @@ describe("AdvisoryLock.withLock", () => {
     expect(result).toBe("success");
   });
 
-  test("releases lock even if handler throws", async ({ transaction }) => {
+  test("propagates the handler's error and stays re-acquirable in the transaction", async ({
+    transaction,
+  }) => {
     const table = Table.parse("test_table");
 
     await expect(
@@ -29,7 +31,7 @@ describe("AdvisoryLock.withLock", () => {
       }),
     ).rejects.toThrow("handler error");
 
-    // Should be able to acquire the lock again since it was released
+    // Re-acquirable within the same transaction (xact advisory locks are re-entrant)
     const result = await AdvisoryLock.withLock(
       transaction,
       table,
@@ -69,6 +71,49 @@ describe("AdvisoryLock.withLock", () => {
         });
 
         await release();
+      });
+    } finally {
+      await pool1.end();
+      await pool2.end();
+    }
+  });
+
+  test("does not leak the lock when the handler aborts the transaction", async ({
+    databaseUrl,
+  }) => {
+    const table = Table.parse("test_table");
+    const operation = "test_op";
+
+    const pool1 = await createPool(databaseUrl.toString(), {
+      maximumPoolSize: 1,
+      queryRetryLimit: 0,
+    });
+    const pool2 = await createPool(databaseUrl.toString(), {
+      maximumPoolSize: 1,
+      queryRetryLimit: 0,
+    });
+
+    try {
+      // The handler aborts its transaction with a failing statement. A
+      // session-scoped lock survived the rollback (leaked); a transaction-scoped
+      // lock is released when the transaction rolls back.
+      await expect(
+        pool1.transaction((tx1) =>
+          AdvisoryLock.withLock(tx1, table, operation, async () => {
+            await tx1.query(sql.unsafe`SELECT 1 FROM pgslice_missing_relation`);
+          }),
+        ),
+      ).rejects.toThrow();
+
+      // A different session can now take the lock — proof it was released.
+      await pool2.transaction(async (tx2) => {
+        const result = await AdvisoryLock.withLock(
+          tx2,
+          table,
+          operation,
+          async () => "acquired after rollback",
+        );
+        expect(result).toBe("acquired after rollback");
       });
     } finally {
       await pool1.end();

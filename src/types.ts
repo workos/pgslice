@@ -225,3 +225,92 @@ export interface TableStatus {
   retiredMirrorTriggerExists: boolean;
   originalIsPartitioned: boolean;
 }
+
+/**
+ * Options for the `maintain` command.
+ */
+export interface MaintainOptions {
+  past?: number;
+  /**
+   * Future partitions to keep ahead, set per period. "N periods" is very
+   * different runway for a weekly vs a monthly vs a yearly table, so the horizon
+   * is per period and every table gets comparable forward coverage; each
+   * discovered table uses the value for its own period. Defaults when omitted:
+   * daily 90, weekly 26, monthly 6, yearly 1.
+   */
+  futureDaily?: number;
+  futureWeekly?: number;
+  futureMonthly?: number;
+  futureYearly?: number;
+  /**
+   * Host of the endpoint being maintained, recorded on every log record's
+   * `target` alongside the database name so operators can see which host was
+   * extended. The command derives it from the connection URL (host only, no
+   * credentials); when omitted, `target.host` is simply absent.
+   */
+  host?: string;
+  /**
+   * Restrict maintenance to partitioned tables in this schema. When omitted,
+   * every managed partitioned table the connection can see is maintained.
+   */
+  schema?: string;
+  tablespace?: string;
+  inheritGrants?: boolean;
+  /**
+   * The reference "now" for choosing each table's partition horizon. Defaults
+   * to a single instant captured when the run starts, so a fleet run that
+   * straddles a period boundary uses one consistent horizon for every table.
+   */
+  now?: Date;
+  /**
+   * Correlation id stamped on every log record for this run, so all records
+   * from one invocation can be grouped. A fresh id is generated per run when
+   * omitted.
+   */
+  jobId?: string;
+}
+
+/**
+ * Sink for maintain's structured JSONL logs. Each call receives one log record;
+ * the `maintain` command serializes it to stdout as one JSON object per line so
+ * downstream log tooling can lift the keys into attributes. Only `info` and
+ * `error` records are emitted — there is no debug/warning level.
+ */
+export type MaintainLog = (entry: Record<string, unknown>) => void;
+
+/**
+ * How a managed table's primary key is owned, which decides how
+ * `add_partitions` treats each new partition.
+ * - "native": the partitioned parent owns the (often composite) primary key, so
+ *   Postgres propagates it — and any partitioned indexes — to each new partition.
+ * - "pgslice": the classic pgslice model where the parent has no primary key and
+ *   each partition owns its own.
+ */
+export type PartitionModel = "native" | "pgslice";
+
+/**
+ * Outcome of maintaining a single managed table.
+ */
+export interface MaintainResult {
+  table: string;
+  /** The partitioning model, or null if maintenance failed before it was determined. */
+  model: PartitionModel | null;
+  partitionsCreated: string[];
+  partitionCount: number;
+  /**
+   * Whether every leaf partition has a replica identity usable for logical
+   * replication. New partitions are created with the default replica identity,
+   * so each leaf's row identity is its own (or inherited) primary key and no
+   * replica-identity DDL is required; this read-only flag surfaces a leaf
+   * lacking a usable identity rather than shipping a CDC-unsafe partition.
+   */
+  replicaIdentityReady: boolean;
+  /** Leaf partitions that would not be CDC-safe (no usable replica identity). */
+  unsafePartitions: string[];
+  /**
+   * Error message if maintaining this table failed; null on success. One
+   * table's failure (e.g. a non-empty DEFAULT blocking the next partition) is
+   * recorded here and does not stop the rest of the fleet from being extended.
+   */
+  error: string | null;
+}

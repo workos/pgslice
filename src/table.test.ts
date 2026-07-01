@@ -738,3 +738,44 @@ describe("Table.rangePartitionBounds", () => {
     expect(finiteRange?.upper).toEqual(new Date("2026-01-19T00:00:00Z"));
   });
 });
+
+describe("Table.unsafeReplicaIdentityPartitions", () => {
+  test("flags an unsafe leaf beneath a sub-partitioned child", async ({
+    transaction,
+  }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE nested_parent (
+        id bigint NOT NULL,
+        created_at timestamp NOT NULL,
+        PRIMARY KEY (id, created_at)
+      ) PARTITION BY RANGE (created_at)
+    `);
+    // A direct child that is itself partitioned (multi-level partitioning).
+    await transaction.query(sql.unsafe`
+      CREATE TABLE nested_parent_2026 PARTITION OF nested_parent
+        FOR VALUES FROM ('2026-01-01') TO ('2027-01-01')
+        PARTITION BY RANGE (created_at)
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE nested_parent_2026m01 PARTITION OF nested_parent_2026
+        FOR VALUES FROM ('2026-01-01') TO ('2026-02-01')
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE nested_parent_2026m02 PARTITION OF nested_parent_2026
+        FOR VALUES FROM ('2026-02-01') TO ('2026-03-01')
+    `);
+    await transaction.query(sql.unsafe`
+      ALTER TABLE nested_parent_2026m02 REPLICA IDENTITY NOTHING
+    `);
+
+    const unsafe =
+      await Table.parse("nested_parent").unsafeReplicaIdentityPartitions(
+        transaction,
+      );
+
+    // Only true leaves are inspected. The unsafe nested leaf is caught; a
+    // direct-children-only check would see the (safe) sub-partitioned child and
+    // miss it.
+    expect(unsafe).toEqual(["nested_parent_2026m02"]);
+  });
+});
