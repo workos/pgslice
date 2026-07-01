@@ -18,6 +18,7 @@ import {
 
 /** A captured maintain JSONL log record, for asserting record shape from tests. */
 interface MaintainLogRecord {
+  jobId: string;
   msg: string;
   level: string;
   success?: number;
@@ -659,7 +660,7 @@ describe("Pgslice.maintain (fleet)", () => {
       const lines: string[] = [];
       const results = await pgslice.maintain(
         transaction,
-        { futureMonthly: 1, host: "clone.example" },
+        { futureMonthly: 1, host: "clone.example", jobId: "job-under-test" },
         (entry) => {
           lines.push(JSON.stringify(entry));
         },
@@ -673,6 +674,8 @@ describe("Pgslice.maintain (fleet)", () => {
       expect(record?.level).toBe("error");
       expect(record?.success).toBe(0);
       expect(record?.target.host).toBe("clone.example");
+      // The run's jobId is stamped on every record.
+      expect(records.every((r) => r.jobId === "job-under-test")).toBe(true);
     });
   });
 

@@ -262,6 +262,12 @@ export interface MaintainOptions {
    * straddles a period boundary uses one consistent horizon for every table.
    */
   now?: Date;
+  /**
+   * Correlation id stamped on every log record for this run, so all records
+   * from one invocation can be grouped. A fresh id is generated per run when
+   * omitted.
+   */
+  jobId?: string;
 }
 
 /**

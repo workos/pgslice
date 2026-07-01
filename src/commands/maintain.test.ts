@@ -5,6 +5,7 @@ import { commandTest as test } from "../testing/index.js";
 import { MaintainCommand } from "./maintain.js";
 
 interface LogEntry {
+  jobId: string;
   msg: string;
   level: string;
   target: { db: string; host: string; schema?: string; table?: string };
@@ -64,6 +65,13 @@ describe("MaintainCommand", () => {
       expect(entry.target.host).toBe("localhost");
       expect(JSON.stringify(entry)).not.toContain("model");
     }
+
+    // Every record from one run shares a single generated jobId (a UUID).
+    const jobIds = new Set(logs.map((entry) => entry.jobId));
+    expect(jobIds.size).toBe(1);
+    expect([...jobIds][0]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
 
     const start = logs[0];
     expect(start.msg).toBe("Running pgslice maintain");

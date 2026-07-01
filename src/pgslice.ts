@@ -8,6 +8,7 @@ import {
 import { createQueryLoggingInterceptor } from "slonik-interceptor-query-logging";
 
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 
 import type {
   AddPartitionsOptions,
@@ -545,6 +546,9 @@ export class Pgslice {
     // Capture one reference instant for the whole fleet, so a run that straddles
     // a period boundary uses a consistent horizon for every table.
     const now = options.now ?? new Date();
+    // One correlation id per run, stamped on every record so all logs from this
+    // invocation can be grouped.
+    const jobId = options.jobId ?? randomUUID();
 
     const { db } = await connection.one(
       sql.type(z.object({ db: z.string() }))`SELECT current_database() AS db`,
@@ -554,6 +558,7 @@ export class Pgslice {
     const target = { host: options.host, db };
 
     log({
+      jobId,
       msg: "Running pgslice maintain",
       level: "info",
       target,
@@ -640,6 +645,7 @@ export class Pgslice {
       }
 
       log({
+        jobId,
         msg,
         level: ok ? "info" : "error",
         target: { ...target, schema: table.schema, table: table.name },
@@ -652,6 +658,7 @@ export class Pgslice {
     }
 
     log({
+      jobId,
       msg:
         failed.length === 0
           ? "Finished pgslice maintain successfully"
