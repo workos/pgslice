@@ -258,6 +258,14 @@ export interface MaintainOptions {
 }
 
 /**
+ * Sink for maintain's structured JSONL logs. Each call receives one log record
+ * whose keys become Datadog attributes; the `maintain` command wires this to
+ * stdout as one JSON object per line. Only `info` and `error` records are
+ * emitted — there is no debug/warning level.
+ */
+export type MaintainLog = (entry: Record<string, unknown>) => void;
+
+/**
  * How a managed table's primary key is owned, which decides how
  * `add_partitions` treats each new partition.
  * - "native": the partitioned parent owns the (often composite) primary key, so

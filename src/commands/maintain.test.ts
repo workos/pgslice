@@ -4,6 +4,25 @@ import { sql, type DatabaseTransactionConnection } from "slonik";
 import { commandTest as test } from "../testing/index.js";
 import { MaintainCommand } from "./maintain.js";
 
+interface LogEntry {
+  msg: string;
+  level: string;
+  target: { db: string; schema?: string; table?: string };
+  future?: { daily: number; weekly: number; monthly: number; yearly: number };
+  partitions?: { new: number; total: number };
+  success?: number;
+  succeeded?: { count: number; tables: string[] };
+  failed?: { count: number; tables: string[] };
+}
+
+/** Parse the command's stdout as JSONL (one log record per line). */
+function jsonLines(output: string | undefined): LogEntry[] {
+  return (output ?? "")
+    .split("\n")
+    .filter((line) => line.trim().length > 0)
+    .map((line): LogEntry => JSON.parse(line));
+}
+
 describe("MaintainCommand", () => {
   test.scoped({ commandClass: ({}, use) => use(MaintainCommand) });
 
@@ -24,7 +43,7 @@ describe("MaintainCommand", () => {
     `);
   }
 
-  test("exits 0 and reports a per-table summary on a healthy fleet", async ({
+  test("emits JSONL and exits 0 on a healthy fleet", async ({
     cli,
     commandContext,
     transaction,
@@ -32,14 +51,47 @@ describe("MaintainCommand", () => {
     await createPosts(transaction);
 
     const exitCode = await cli.run(["maintain"], commandContext);
-
     expect(exitCode).toBe(0);
-    expect(commandContext.stdout.read()?.toString()).toContain(
-      "public.posts [native]",
-    );
+
+    const logs = jsonLines(commandContext.stdout.read()?.toString());
+
+    // Every record shares the shape, uses only info/error, and never leaks the
+    // partitioning model.
+    for (const entry of logs) {
+      expect(typeof entry.msg).toBe("string");
+      expect(["info", "error"]).toContain(entry.level);
+      expect(entry.target.db).toBeTypeOf("string");
+      expect(JSON.stringify(entry)).not.toContain("model");
+    }
+
+    const start = logs[0];
+    expect(start.msg).toBe("Running pgslice maintain");
+    expect(start.level).toBe("info");
+    expect(start.future).toEqual({
+      daily: 90,
+      weekly: 26,
+      monthly: 6,
+      yearly: 1,
+    });
+
+    const table = logs.find((entry) => entry.target.table === "posts");
+    expect(table?.msg).toBe("Extended table successfully");
+    expect(table?.level).toBe("info");
+    expect(table?.success).toBe(1);
+    expect(table?.target.schema).toBe("public");
+    expect(table?.partitions).toEqual({
+      new: expect.any(Number),
+      total: expect.any(Number),
+    });
+
+    const final = logs.at(-1);
+    expect(final?.msg).toBe("Finished pgslice maintain successfully");
+    expect(final?.level).toBe("info");
+    expect(final?.succeeded).toEqual({ count: 1, tables: ["public.posts"] });
+    expect(final?.failed).toEqual({ count: 0, tables: [] });
   });
 
-  test("exits 1 when a leaf has no usable replica identity", async ({
+  test("exits 1 and logs an error record when a leaf has no usable replica identity", async ({
     cli,
     commandContext,
     transaction,
@@ -50,14 +102,22 @@ describe("MaintainCommand", () => {
     `);
 
     const exitCode = await cli.run(["maintain"], commandContext);
-
     expect(exitCode).toBe(1);
-    expect(commandContext.stderr.read()?.toString()).toContain(
-      "usable replica identity",
-    );
+
+    const logs = jsonLines(commandContext.stdout.read()?.toString());
+
+    const table = logs.find((entry) => entry.target.table === "posts");
+    expect(table?.level).toBe("error");
+    expect(table?.success).toBe(0);
+    expect(table?.msg).toContain("replica identity");
+
+    const final = logs.at(-1);
+    expect(final?.msg).toBe("Finished pgslice maintain with errors");
+    expect(final?.level).toBe("error");
+    expect(final?.failed).toEqual({ count: 1, tables: ["public.posts"] });
   });
 
-  test("reports no managed tables when none carry a settings comment", async ({
+  test("exits 0 with an empty summary when no managed tables exist", async ({
     cli,
     commandContext,
     transaction,
@@ -68,10 +128,15 @@ describe("MaintainCommand", () => {
     `);
 
     const exitCode = await cli.run(["maintain"], commandContext);
-
     expect(exitCode).toBe(0);
-    expect(commandContext.stdout.read()?.toString()).toContain(
-      "No managed partitioned tables found.",
-    );
+
+    const logs = jsonLines(commandContext.stdout.read()?.toString());
+    expect(logs[0].msg).toBe("Running pgslice maintain");
+    expect(logs.some((entry) => entry.target.table !== undefined)).toBe(false);
+
+    const final = logs.at(-1);
+    expect(final?.msg).toBe("Finished pgslice maintain successfully");
+    expect(final?.succeeded).toEqual({ count: 0, tables: [] });
+    expect(final?.failed).toEqual({ count: 0, tables: [] });
   });
 });

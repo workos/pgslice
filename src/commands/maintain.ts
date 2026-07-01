@@ -3,6 +3,7 @@ import * as t from "typanion";
 
 import { BaseCommand } from "./base.js";
 import { Pgslice } from "../pgslice.js";
+import type { MaintainLog } from "../types.js";
 
 export class MaintainCommand extends BaseCommand {
   static override paths = [["maintain"]];
@@ -65,49 +66,36 @@ export class MaintainCommand extends BaseCommand {
       "Copy each parent table's privileges onto its new partitions (default: true; disable with --no-inherit-grants)",
   });
 
-  override async perform(pgslice: Pgslice): Promise<void> {
+  override async perform(pgslice: Pgslice): Promise<number | void> {
+    // maintain emits structured records (start, per-table, final); write each as
+    // one JSON object per line so Datadog can extract the keys as attributes.
+    const log: MaintainLog = (entry) => {
+      this.context.stdout.write(`${JSON.stringify(entry)}\n`);
+    };
+
     const results = await pgslice.start((connection) =>
-      pgslice.maintain(connection, {
-        past: this.past,
-        futureDaily: this.futureDaily,
-        futureWeekly: this.futureWeekly,
-        futureMonthly: this.futureMonthly,
-        futureYearly: this.futureYearly,
-        schema: this.schema,
-        tablespace: this.tablespace,
-        inheritGrants: this.inheritGrants,
-      }),
+      pgslice.maintain(
+        connection,
+        {
+          past: this.past,
+          futureDaily: this.futureDaily,
+          futureWeekly: this.futureWeekly,
+          futureMonthly: this.futureMonthly,
+          futureYearly: this.futureYearly,
+          schema: this.schema,
+          tablespace: this.tablespace,
+          inheritGrants: this.inheritGrants,
+        },
+        log,
+      ),
     );
 
-    if (results.length === 0) {
-      this.context.stdout.write("No managed partitioned tables found.\n");
-      return;
-    }
-
-    const problems: string[] = [];
-    for (const result of results) {
-      if (result.error) {
-        this.context.stdout.write(
-          `${result.table}: FAILED — ${result.error}\n`,
-        );
-        problems.push(`${result.table}: ${result.error}`);
-        continue;
-      }
-
-      this.context.stdout.write(
-        `${result.table} [${result.model}]: +${result.partitionsCreated.length} partition(s), ${result.partitionCount} total\n`,
-      );
-      if (!result.replicaIdentityReady) {
-        problems.push(
-          `${result.table}: partitions without a usable replica identity (CDC-unsafe): ${result.unsafePartitions.join(", ")}`,
-        );
-      }
-    }
-
-    if (problems.length > 0) {
-      throw new Error(
-        `maintain encountered problems:\n  ${problems.join("\n  ")}`,
-      );
-    }
+    // Exit non-zero if any table failed to extend or shipped a CDC-unsafe leaf;
+    // as a CronJob that surfaces as a failed Job. The final summary log already
+    // carries the detail, so no separate error line is written.
+    const failed = results.some(
+      (result) => result.error !== null || !result.replicaIdentityReady,
+    );
+    return failed ? 1 : undefined;
   }
 }

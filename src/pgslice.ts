@@ -17,6 +17,7 @@ import type {
   EnableMirroringOptions,
   FillBatchResult,
   FillOptions,
+  MaintainLog,
   MaintainOptions,
   MaintainResult,
   PartitionModel,
@@ -520,10 +521,16 @@ export class Pgslice {
    * Each table is maintained independently: a failure on one table (for example
    * a non-empty DEFAULT partition that blocks creating the next one) is recorded
    * on that table's result and does not stop the rest of the fleet.
+   *
+   * The optional `log` sink receives structured records — one on start, one per
+   * table as it is extended, and one final summary — for the command to emit as
+   * JSONL. It defaults to a no-op, so callers that only need the results (such
+   * as tests) can ignore it.
    */
   async maintain(
     connection: DatabasePoolConnection,
     options: MaintainOptions,
+    log: MaintainLog = () => {},
   ): Promise<MaintainResult[]> {
     const past = options.past ?? 0;
     // Future runway is set per period: "N periods" is very different runway for a
@@ -539,13 +546,33 @@ export class Pgslice {
     // a period boundary uses a consistent horizon for every table.
     const now = options.now ?? new Date();
 
+    const { db } = await connection.one(
+      sql.type(z.object({ db: z.string() }))`SELECT current_database() AS db`,
+    );
+
+    log({
+      msg: "Running pgslice maintain",
+      level: "info",
+      target: { db },
+      future: {
+        daily: futureByPeriod.day,
+        weekly: futureByPeriod.week,
+        monthly: futureByPeriod.month,
+        yearly: futureByPeriod.year,
+      },
+    });
+
     const managed = await this.#discoverManagedTables(
       connection,
       options.schema,
     );
 
     const results: MaintainResult[] = [];
+    const succeeded: string[] = [];
+    const failed: string[] = [];
+
     for (const { table, period } of managed) {
+      let result: MaintainResult;
       try {
         const partitionsCreated = await this.addPartitions(connection, {
           table: table.toString(),
@@ -570,7 +597,7 @@ export class Pgslice {
             };
           });
 
-        results.push({
+        result = {
           table: table.toString(),
           model,
           partitionsCreated,
@@ -578,9 +605,9 @@ export class Pgslice {
           replicaIdentityReady: unsafePartitions.length === 0,
           unsafePartitions,
           error: null,
-        });
+        };
       } catch (error) {
-        results.push({
+        result = {
           table: table.toString(),
           model: null,
           partitionsCreated: [],
@@ -588,9 +615,41 @@ export class Pgslice {
           replicaIdentityReady: false,
           unsafePartitions: [],
           error: error instanceof Error ? error.message : String(error),
-        });
+        };
       }
+
+      results.push(result);
+
+      // A table is a success only when it extended without error and every leaf
+      // is CDC-safe; a created-but-CDC-unsafe table is a failure the run reports.
+      const ok = result.error === null && result.replicaIdentityReady;
+      (ok ? succeeded : failed).push(result.table);
+
+      log({
+        msg: ok
+          ? "Extended table successfully"
+          : (result.error ??
+            `Partitions without a usable replica identity (CDC-unsafe): ${result.unsafePartitions.join(", ")}`),
+        level: ok ? "info" : "error",
+        target: { db, schema: table.schema, table: table.name },
+        partitions: {
+          new: result.partitionsCreated.length,
+          total: result.partitionCount,
+        },
+        success: ok ? 1 : 0,
+      });
     }
+
+    log({
+      msg:
+        failed.length === 0
+          ? "Finished pgslice maintain successfully"
+          : "Finished pgslice maintain with errors",
+      level: failed.length === 0 ? "info" : "error",
+      target: { db },
+      succeeded: { count: succeeded.length, tables: succeeded },
+      failed: { count: failed.length, tables: failed },
+    });
 
     return results;
   }
