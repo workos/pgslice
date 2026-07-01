@@ -26,10 +26,26 @@ export abstract class AdvisoryLock {
     handler: () => Promise<T>,
   ): Promise<T> {
     const release = await this.acquire(connection, table, operation);
+    let handlerThrew = false;
     try {
       return await handler();
+    } catch (error) {
+      handlerThrew = true;
+      throw error;
     } finally {
-      await release();
+      try {
+        await release();
+      } catch (releaseError) {
+        // A release failure must not mask the handler's error. When the handler
+        // aborts the transaction (e.g. a failed CREATE), the unlock query itself
+        // errors with "current transaction is aborted"; surfacing that would
+        // hide the real cause. The session-level lock is freed when the
+        // transaction or session ends regardless, so only propagate a release
+        // failure when the handler itself succeeded.
+        if (!handlerThrew) {
+          throw releaseError;
+        }
+      }
     }
   }
 
