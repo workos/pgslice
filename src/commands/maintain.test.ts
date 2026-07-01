@@ -31,7 +31,7 @@ describe("MaintainCommand", () => {
   }) => {
     await createPosts(transaction);
 
-    const exitCode = await cli.run(["maintain", "--future=1"], commandContext);
+    const exitCode = await cli.run(["maintain"], commandContext);
 
     expect(exitCode).toBe(0);
     expect(commandContext.stdout.read()?.toString()).toContain(
@@ -49,7 +49,7 @@ describe("MaintainCommand", () => {
       ALTER TABLE posts_y2026m01 REPLICA IDENTITY NOTHING
     `);
 
-    const exitCode = await cli.run(["maintain", "--future=1"], commandContext);
+    const exitCode = await cli.run(["maintain"], commandContext);
 
     expect(exitCode).toBe(1);
     expect(commandContext.stderr.read()?.toString()).toContain(
@@ -67,7 +67,7 @@ describe("MaintainCommand", () => {
       PARTITION BY RANGE (created_at)
     `);
 
-    const exitCode = await cli.run(["maintain", "--future=1"], commandContext);
+    const exitCode = await cli.run(["maintain"], commandContext);
 
     expect(exitCode).toBe(0);
     expect(commandContext.stdout.read()?.toString()).toContain(

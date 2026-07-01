@@ -231,7 +231,17 @@ export interface TableStatus {
  */
 export interface MaintainOptions {
   past?: number;
-  future?: number;
+  /**
+   * Future partitions to keep ahead, set per period. "N periods" is very
+   * different runway for a weekly vs a monthly vs a yearly table, so the horizon
+   * is per period and every table gets comparable forward coverage; each
+   * discovered table uses the value for its own period. Defaults when omitted:
+   * daily 90, weekly 26, monthly 6, yearly 1.
+   */
+  futureDaily?: number;
+  futureWeekly?: number;
+  futureMonthly?: number;
+  futureYearly?: number;
   /**
    * Restrict maintenance to partitioned tables in this schema. When omitted,
    * every managed partitioned table the connection can see is maintained.
