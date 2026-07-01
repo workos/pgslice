@@ -549,11 +549,14 @@ export class Pgslice {
     const { db } = await connection.one(
       sql.type(z.object({ db: z.string() }))`SELECT current_database() AS db`,
     );
+    // Every record carries the endpoint host (from the connection URL) and the
+    // database name, so a run identifies which host and DB it extended.
+    const target = { host: options.host, db };
 
     log({
       msg: "Running pgslice maintain",
       level: "info",
-      target: { db },
+      target,
       future: {
         daily: futureByPeriod.day,
         weekly: futureByPeriod.week,
@@ -625,13 +628,21 @@ export class Pgslice {
       const ok = result.error === null && result.replicaIdentityReady;
       (ok ? succeeded : failed).push(result.table);
 
+      let msg: string;
+      if (result.error !== null) {
+        msg = result.error;
+      } else if (!result.replicaIdentityReady) {
+        msg = `Partitions without a usable replica identity (CDC-unsafe): ${result.unsafePartitions.join(", ")}`;
+      } else if (result.partitionsCreated.length === 0) {
+        msg = "Table already up to date; no extension needed";
+      } else {
+        msg = "Extended table successfully";
+      }
+
       log({
-        msg: ok
-          ? "Extended table successfully"
-          : (result.error ??
-            `Partitions without a usable replica identity (CDC-unsafe): ${result.unsafePartitions.join(", ")}`),
+        msg,
         level: ok ? "info" : "error",
-        target: { db, schema: table.schema, table: table.name },
+        target: { ...target, schema: table.schema, table: table.name },
         partitions: {
           new: result.partitionsCreated.length,
           total: result.partitionCount,
@@ -646,7 +657,7 @@ export class Pgslice {
           ? "Finished pgslice maintain successfully"
           : "Finished pgslice maintain with errors",
       level: failed.length === 0 ? "info" : "error",
-      target: { db },
+      target,
       succeeded: { count: succeeded.length, tables: succeeded },
       failed: { count: failed.length, tables: failed },
     });

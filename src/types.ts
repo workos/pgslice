@@ -243,6 +243,13 @@ export interface MaintainOptions {
   futureMonthly?: number;
   futureYearly?: number;
   /**
+   * Host of the endpoint being maintained, recorded on every log record's
+   * `target` alongside the database name so operators can see which host was
+   * extended. The command derives it from the connection URL (host only, no
+   * credentials); when omitted, `target.host` is simply absent.
+   */
+  host?: string;
+  /**
    * Restrict maintenance to partitioned tables in this schema. When omitted,
    * every managed partitioned table the connection can see is maintained.
    */
@@ -258,10 +265,10 @@ export interface MaintainOptions {
 }
 
 /**
- * Sink for maintain's structured JSONL logs. Each call receives one log record
- * whose keys become Datadog attributes; the `maintain` command wires this to
- * stdout as one JSON object per line. Only `info` and `error` records are
- * emitted — there is no debug/warning level.
+ * Sink for maintain's structured JSONL logs. Each call receives one log record;
+ * the `maintain` command serializes it to stdout as one JSON object per line so
+ * downstream log tooling can lift the keys into attributes. Only `info` and
+ * `error` records are emitted — there is no debug/warning level.
  */
 export type MaintainLog = (entry: Record<string, unknown>) => void;
 

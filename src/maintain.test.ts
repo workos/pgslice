@@ -16,6 +16,14 @@ import {
   TSTZ,
 } from "./testing/shapes.js";
 
+/** A captured maintain JSONL log record, for asserting record shape from tests. */
+interface MaintainLogRecord {
+  msg: string;
+  level: string;
+  success?: number;
+  target: { host?: string; db: string; schema?: string; table?: string };
+}
+
 /**
  * End-to-end validation of `maintain` against the real production table shapes
  * on PostgreSQL 13.20: catalog discovery, the native (parent-owned PK) vs
@@ -622,6 +630,49 @@ describe("Pgslice.maintain (fleet)", () => {
       // The healthy table is extended despite the other table's failure.
       expect(healthy?.error).toBeNull();
       expect(healthy?.partitionsCreated).toEqual(["healthy_202602"]);
+    });
+
+    test("emits an error record carrying the failure message and host", async ({
+      pgslice,
+      transaction,
+    }) => {
+      await nativeParent(
+        transaction,
+        "blocked",
+        "created_at",
+        TS,
+        "month",
+        "date",
+      );
+      await addChild(
+        transaction,
+        "blocked",
+        "blocked_y2026m01",
+        "2026-01-01",
+        "2026-02-01",
+      );
+      await addDefault(transaction, "blocked", "blocked_default");
+      await transaction.query(sql.unsafe`
+        INSERT INTO blocked (id, created_at, payload) VALUES (1, '2026-02-15', 'absorbed')
+      `);
+
+      const lines: string[] = [];
+      const results = await pgslice.maintain(
+        transaction,
+        { futureMonthly: 1, host: "clone.example" },
+        (entry) => {
+          lines.push(JSON.stringify(entry));
+        },
+      );
+      const records = lines.map((line): MaintainLogRecord => JSON.parse(line));
+
+      const blocked = results.find((r) => r.table === "public.blocked");
+      const record = records.find((r) => r.target.table === "blocked");
+      // The caught error is surfaced verbatim as the record's msg.
+      expect(record?.msg).toBe(blocked?.error);
+      expect(record?.level).toBe("error");
+      expect(record?.success).toBe(0);
+      expect(record?.target.host).toBe("clone.example");
     });
   });
 

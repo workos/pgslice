@@ -68,15 +68,20 @@ export class MaintainCommand extends BaseCommand {
 
   override async perform(pgslice: Pgslice): Promise<number | void> {
     // maintain emits structured records (start, per-table, final); write each as
-    // one JSON object per line so Datadog can extract the keys as attributes.
+    // one JSON object per line (JSONL).
     const log: MaintainLog = (entry) => {
       this.context.stdout.write(`${JSON.stringify(entry)}\n`);
     };
+
+    // Host only — never the credentials in the URL — so the logs identify the
+    // endpoint being maintained without leaking secrets.
+    const host = new URL(this.getDatabaseUrl()).hostname;
 
     const results = await pgslice.start((connection) =>
       pgslice.maintain(
         connection,
         {
+          host,
           past: this.past,
           futureDaily: this.futureDaily,
           futureWeekly: this.futureWeekly,
