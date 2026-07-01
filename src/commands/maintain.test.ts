@@ -183,4 +183,51 @@ describe("MaintainCommand", () => {
     expect(table?.partitions).toEqual({ new: 0, total: 1 });
     expect(table?.target.host).toBe("localhost");
   });
+
+  test("reads per-period horizons from PGSLICE_FUTURE_* env vars", async ({
+    cli,
+    commandContext,
+    transaction,
+  }) => {
+    await createPosts(transaction);
+    process.env.PGSLICE_FUTURE_MONTHLY = "3";
+    process.env.PGSLICE_FUTURE_WEEKLY = "9";
+    try {
+      const exitCode = await cli.run(["maintain"], commandContext);
+      expect(exitCode).toBe(0);
+
+      const logs = jsonLines(commandContext.stdout.read()?.toString());
+      // env overrides the baked default for its period; unset periods keep theirs.
+      expect(logs[0].future).toEqual({
+        daily: 90,
+        weekly: 9,
+        monthly: 3,
+        yearly: 1,
+      });
+    } finally {
+      delete process.env.PGSLICE_FUTURE_MONTHLY;
+      delete process.env.PGSLICE_FUTURE_WEEKLY;
+    }
+  });
+
+  test("an explicit --future-monthly flag overrides the env var", async ({
+    cli,
+    commandContext,
+    transaction,
+  }) => {
+    await createPosts(transaction);
+    process.env.PGSLICE_FUTURE_MONTHLY = "3";
+    try {
+      const exitCode = await cli.run(
+        ["maintain", "--future-monthly", "7"],
+        commandContext,
+      );
+      expect(exitCode).toBe(0);
+
+      const logs = jsonLines(commandContext.stdout.read()?.toString());
+      expect(logs[0].future?.monthly).toBe(7);
+    } finally {
+      delete process.env.PGSLICE_FUTURE_MONTHLY;
+    }
+  });
 });

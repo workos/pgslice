@@ -31,6 +31,10 @@ export class MaintainCommand extends BaseCommand {
         "Override one period's horizon (12 months of monthly runway)",
         "$0 maintain --future-monthly 12",
       ],
+      [
+        "Configure a horizon via environment (e.g. from a scheduled job)",
+        "PGSLICE_FUTURE_MONTHLY=12 $0 maintain",
+      ],
       ["Restrict to a single schema", "$0 maintain --schema analytics"],
     ],
   });
@@ -41,18 +45,22 @@ export class MaintainCommand extends BaseCommand {
   });
   futureDaily = Option.String("--future-daily", "90", {
     description: "Future partitions to keep ahead for daily tables",
+    env: "PGSLICE_FUTURE_DAILY",
     validator: t.cascade(t.isNumber(), [t.isInteger(), t.isAtLeast(0)]),
   });
   futureWeekly = Option.String("--future-weekly", "26", {
     description: "Future partitions to keep ahead for weekly tables",
+    env: "PGSLICE_FUTURE_WEEKLY",
     validator: t.cascade(t.isNumber(), [t.isInteger(), t.isAtLeast(0)]),
   });
   futureMonthly = Option.String("--future-monthly", "6", {
     description: "Future partitions to keep ahead for monthly tables",
+    env: "PGSLICE_FUTURE_MONTHLY",
     validator: t.cascade(t.isNumber(), [t.isInteger(), t.isAtLeast(0)]),
   });
   futureYearly = Option.String("--future-yearly", "1", {
     description: "Future partitions to keep ahead for yearly tables",
+    env: "PGSLICE_FUTURE_YEARLY",
     validator: t.cascade(t.isNumber(), [t.isInteger(), t.isAtLeast(0)]),
   });
   schema = Option.String("--schema", {
