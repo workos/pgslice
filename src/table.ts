@@ -505,32 +505,29 @@ export class Table {
    * Partitions covered by a primary key (the native parent-owned key or a
    * per-partition key), or an explicit FULL / USING INDEX identity, are safe.
    * Read-only: it only inspects the catalog and never emits replica-identity
-   * DDL. Assumes single-level partitioning (direct children only).
+   * DDL. Walks the whole partition tree, so leaf partitions beneath a
+   * sub-partitioned child are inspected too — not just direct children.
    */
   async unsafeReplicaIdentityPartitions(
     tx: CommonQueryMethods,
   ): Promise<string[]> {
     const rows = await tx.any(
       sql.type(z.object({ name: z.string() }))`
-        SELECT child.relname AS name
-        FROM pg_inherits i
-          JOIN pg_class parent ON parent.oid = i.inhparent
-          JOIN pg_class child ON child.oid = i.inhrelid
-          JOIN pg_namespace nmsp_parent ON nmsp_parent.oid = parent.relnamespace
-        WHERE
-          nmsp_parent.nspname = ${this.schema} AND
-          parent.relname = ${this.name} AND
-          (
-            child.relreplident = 'n'
+        SELECT leaf.relname AS name
+        FROM pg_partition_tree(${this.regclassLiteral}::regclass) tree
+          JOIN pg_class leaf ON leaf.oid = tree.relid
+        WHERE tree.isleaf
+          AND (
+            leaf.relreplident = 'n'
             OR (
-              child.relreplident = 'd'
+              leaf.relreplident = 'd'
               AND NOT EXISTS (
                 SELECT 1 FROM pg_index pk
-                WHERE pk.indrelid = child.oid AND pk.indisprimary
+                WHERE pk.indrelid = leaf.oid AND pk.indisprimary
               )
             )
           )
-        ORDER BY child.relname ASC
+        ORDER BY leaf.relname ASC
       `,
     );
 
