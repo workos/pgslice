@@ -35,6 +35,20 @@ describe("TableSettings", () => {
       expect(settings?.cast).toBe("timestamptz");
     });
 
+    it("parses an optional format template", () => {
+      const settings = TableSettings.parseFromComment(
+        "column:occurred_at,period:week,cast:date,format:p{YYYY}w{WW}",
+      );
+      expect(settings?.format).toBe("p{YYYY}w{WW}");
+    });
+
+    it("leaves format undefined when the key is absent", () => {
+      const settings = TableSettings.parseFromComment(
+        "column:occurred_at,period:week,cast:date",
+      );
+      expect(settings?.format).toBeUndefined();
+    });
+
     describe("periods", () => {
       it("parses day period", () => {
         const settings = TableSettings.parseFromComment(

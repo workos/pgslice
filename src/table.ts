@@ -5,7 +5,12 @@ import {
   IdentifierSqlToken,
 } from "slonik";
 import { z } from "zod";
-import { advanceDate, parsePartitionDate } from "./date-ranges.js";
+import {
+  advanceDate,
+  parsePartitionDate,
+  parseRangeBound,
+  type ExistingRange,
+} from "./date-ranges.js";
 import type {
   Cast,
   ColumnInfo,
@@ -66,6 +71,14 @@ function dataTypeToCast(dataType: string): Cast | null {
   }
 }
 
+/**
+ * Derives a time filter from the first/last partition *names* via
+ * {@link parsePartitionDate}, so it assumes pgslice's `<table>_<suffix>` naming.
+ * It is invalid for a retrofitted table whose partitions use a legacy scheme
+ * (e.g. `..._y2026w45`): the suffix won't parse. `fill`/`synchronize` depend on
+ * it, so don't run them against such a table — `add_partitions` only needs the
+ * partition bounds, not the names, so it is unaffected.
+ */
 function derivePartitionTimeFilter(
   settings: TableSettings,
   partitions: Table[],
@@ -76,10 +89,15 @@ function derivePartitionTimeFilter(
 
   const firstPartition = partitions[0];
   const lastPartition = partitions[partitions.length - 1];
-  const startingTime = parsePartitionDate(firstPartition.name, settings.period);
+  const startingTime = parsePartitionDate(
+    firstPartition.name,
+    settings.period,
+    settings.format,
+  );
   const lastPartitionDate = parsePartitionDate(
     lastPartition.name,
     settings.period,
+    settings.format,
   );
   const endingTime = advanceDate(lastPartitionDate, settings.period, 1);
 
@@ -109,6 +127,15 @@ export async function getServerVersionNum(
     `,
   );
   return result.server_version_num;
+}
+
+/**
+ * A privilege grant on a table. A null grantee represents PUBLIC.
+ */
+export interface TableGrant {
+  grantee: string | null;
+  privilege: string;
+  grantable: boolean;
 }
 
 /**
@@ -347,6 +374,70 @@ export class Table {
   }
 
   /**
+   * Gets the explicit primary key column names for this table, in key order.
+   *
+   * Unlike {@link primaryKey}, this supports composite primary keys and returns
+   * an empty array (rather than throwing) when no explicit primary key exists.
+   */
+  async primaryKeyColumns(
+    tx: DatabaseTransactionConnection,
+  ): Promise<string[]> {
+    const result = await tx.any(
+      sql.type(z.object({ attname: z.string(), ord: z.coerce.number() }))`
+        SELECT a.attname, k.ord
+        FROM pg_index i
+          JOIN pg_class c ON c.oid = i.indrelid
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          CROSS JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
+          JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.attnum
+        WHERE n.nspname = ${this.schema}
+          AND c.relname = ${this.name}
+          AND i.indisprimary
+        ORDER BY k.ord
+      `,
+    );
+
+    return result.map((row) => row.attname);
+  }
+
+  /**
+   * Gets the privilege grants present on this table, excluding the table
+   * owner's implicit privileges. A null grantee represents PUBLIC.
+   */
+  async grants(tx: DatabaseTransactionConnection): Promise<TableGrant[]> {
+    const result = await tx.any(
+      sql.type(
+        z.object({
+          grantee: z.string().nullable(),
+          privilege_type: z.string(),
+          is_grantable: z.boolean(),
+        }),
+      )`
+        SELECT DISTINCT ON (grantee_role.rolname, acl.privilege_type)
+          grantee_role.rolname AS grantee,
+          acl.privilege_type,
+          acl.is_grantable
+        FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          CROSS JOIN LATERAL aclexplode(c.relacl) AS acl
+          LEFT JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+        WHERE n.nspname = ${this.schema}
+          AND c.relname = ${this.name}
+          AND acl.grantee <> c.relowner
+        -- A (grantee, privilege) pair can appear once per grantor; collapse to
+        -- one row, preferring the grantable variant so the result is stable.
+        ORDER BY grantee_role.rolname, acl.privilege_type, acl.is_grantable DESC
+      `,
+    );
+
+    return result.map((row) => ({
+      grantee: row.grantee,
+      privilege: row.privilege_type,
+      grantable: row.is_grantable,
+    }));
+  }
+
+  /**
    * Gets all child partitions of this table.
    */
   async partitions(tx: CommonQueryMethods): Promise<Table[]> {
@@ -368,6 +459,42 @@ export class Table {
     );
 
     return result.map((r) => new Table(r.schema, r.name));
+  }
+
+  /**
+   * Reads the RANGE bounds of this partitioned table's existing child
+   * partitions from the catalog. Used to extend an existing table by partition
+   * bounds rather than by name, so legacy-named partitions (created outside
+   * pgslice) are recognized and never collided with or renamed.
+   *
+   * Non-RANGE bounds we don't manage are skipped.
+   *
+   * Must run inside a transaction already pinned to UTC
+   * (`SET LOCAL TIME ZONE 'UTC'`): for a `timestamptz` key, `pg_get_expr`
+   * renders each bound in the session timezone and the parser reads the
+   * rendered instant as UTC, so under a non-UTC session every bound would shift
+   * by the session offset. `addPartitions` pins UTC before calling this.
+   */
+  async rangePartitionBounds(tx: CommonQueryMethods): Promise<ExistingRange[]> {
+    const rows = await tx.any(
+      sql.type(z.object({ name: z.string(), bound: z.string() }))`
+        SELECT
+          child.relname AS name,
+          pg_get_expr(child.relpartbound, child.oid) AS bound
+        FROM pg_inherits
+          JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
+          JOIN pg_class child ON pg_inherits.inhrelid = child.oid
+          JOIN pg_namespace nmsp_parent ON nmsp_parent.oid = parent.relnamespace
+        WHERE
+          nmsp_parent.nspname = ${this.schema} AND
+          parent.relname = ${this.name}
+      `,
+    );
+
+    return rows.flatMap((r) => {
+      const parsed = parseRangeBound(r.bound);
+      return parsed ? [{ ...parsed, name: r.name }] : [];
+    });
   }
 
   /**

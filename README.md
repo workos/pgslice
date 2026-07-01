@@ -45,7 +45,7 @@ export PGSLICE_URL=postgres://localhost/myapp_development
 pgslice prep <table> <column> <period>
 ```
 
-The column should be a `timestamp`, `timestamptz`, or `date` column and period can be `day`, `month`, or `year`.
+The column should be a `timestamp`, `timestamptz`, or `date` column and period can be `day`, `week` (ISO-week, Monday-aligned), `month`, or `year`.
 
 This creates a partitioned table named `<table>_intermediate` using range partitioning.
 
@@ -280,11 +280,14 @@ To add partitions, use:
 pgslice add_partitions <table> --future 3
 ```
 
-Add this as a cron job to create a new partition each day, month, or year.
+Add this as a cron job to create a new partition each day, week, month, or year.
 
 ```sh
 # day
 0 0 * * * pgslice add_partitions <table> --future 3 --url ...
+
+# week (Monday-aligned ISO weeks)
+0 0 * * 1 pgslice add_partitions <table> --future 3 --url ...
 
 # month
 0 0 1 * * pgslice add_partitions <table> --future 3 --url ...
@@ -304,9 +307,42 @@ WHERE
     c.relkind = 'r' AND
     n.nspname = 'public' AND
     c.relname = '<table>_' || to_char(NOW() + INTERVAL '3 days', 'YYYYMMDD')
+    -- for weeks, use to_char(NOW() + INTERVAL '3 weeks', 'IYYY"w"IW')
     -- for months, use to_char(NOW() + INTERVAL '3 months', 'YYYYMM')
     -- for years, use to_char(NOW() + INTERVAL '3 years', 'YYYY')
 ```
+
+## Managing Existing Tables
+
+pgslice can manage tables that were already partitioned outside of it (for example by an application migration), so you can converge future-partition creation onto a single tool without recreating or renaming anything.
+
+Mark a table as managed by giving it the pgslice settings comment:
+
+```sql
+COMMENT ON TABLE <table> IS 'column:created_at,period:week,cast:date,version:3';
+```
+
+Then extend it like any other table:
+
+```sh
+pgslice add_partitions <table> --future 3
+```
+
+When a table already has partitions, pgslice extends it **by partition bounds**: it anchors on the maximum existing upper bound and chains contiguous, period-sized ranges from there. This means it:
+
+- never renames or collides with existing (legacy-named) partitions,
+- introduces no gap or overlap at the boundary, and
+- continues whatever scheme the table already uses — ISO weeks, calendar months, or a year-resetting weekly scheme — rather than snapping to an absolute calendar.
+
+Because extension is keyed on bounds rather than names, newly-created partitions use pgslice's own naming (`<table>_<suffix>`), which may differ cosmetically from a legacy naming convention. Partition names are not functional, so mixed naming is expected and harmless. `DEFAULT` and `MINVALUE`/`MAXVALUE` partitions are recognized and ignored when choosing the extension anchor.
+
+### Primary keys
+
+If the partitioned parent owns a primary key (including a composite key), Postgres propagates it — and any partitioned indexes — to each new partition, so pgslice does not add a per-partition key. Tables in the classic pgslice model (no key on the parent) still get a per-partition key.
+
+### Grants
+
+By default, pgslice re-issues the parent table's grants on each new partition, because Postgres does not cascade a parent's grants to its partitions. This keeps a replication/CDC role's access intact as new partitions appear. Disable it with `--no-inherit-grants`.
 
 ## Archiving Partitions
 

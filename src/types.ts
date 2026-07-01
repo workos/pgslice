@@ -1,7 +1,7 @@
 /**
  * Valid partition periods for partitioned tables.
  */
-export const PERIODS = ["day", "month", "year"] as const;
+export const PERIODS = ["day", "week", "month", "year"] as const;
 
 /**
  * Type guard to check if a string is a valid Period.
@@ -34,6 +34,7 @@ export interface ColumnInfo {
  */
 export const SQL_FORMAT = {
   day: "YYYYMMDD",
+  week: 'IYYY"w"IW',
   month: "YYYYMM",
   year: "YYYY",
 } as const satisfies Record<Period, string>;
@@ -63,6 +64,20 @@ export interface AddPartitionsOptions {
   past?: number;
   future?: number;
   tablespace?: string;
+  /**
+   * When true (the default), each newly created partition is granted the same
+   * privileges that are present on the partitioned parent table. Postgres does
+   * not propagate parent grants to partitions automatically, so without this a
+   * role such as a CDC/replication user loses access to new
+   * partitions until a grant is run manually.
+   */
+  inheritGrants?: boolean;
+  /**
+   * The reference "now" for choosing the partition horizon. Defaults to the
+   * current time. Pass a single value across a fleet so a run that straddles a
+   * period boundary uses a consistent horizon for every table.
+   */
+  now?: Date;
 }
 
 import type { MirroringTargetType } from "./mirroring.js";

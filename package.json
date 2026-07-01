@@ -24,6 +24,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
+    "coverage": "vitest run --coverage",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
@@ -35,6 +36,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.7",
+    "@vitest/coverage-v8": "^4.0.18",
     "dotenv": "^16.4.7",
     "prettier": "^3.4.2",
     "typescript": "^5.7.3",

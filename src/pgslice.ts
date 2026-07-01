@@ -26,14 +26,41 @@ import type {
   UnswapOptions,
 } from "./types.js";
 import { isPeriod } from "./types.js";
-import { Table, getServerVersionNum } from "./table.js";
-import { DateRanges } from "./date-ranges.js";
+import { TableSettings } from "./table-settings.js";
+import { Table, getServerVersionNum, type TableGrant } from "./table.js";
+import {
+  DateRanges,
+  advanceDate,
+  extendRanges,
+  extendRangesBackward,
+  isUtcMidnight,
+  maxUpperBound,
+  minLowerBound,
+  rangeOverlaps,
+  roundDate,
+  type DateRange,
+} from "./date-ranges.js";
 import { formatDateForSql, rawSql, sql } from "./sql-utils.js";
 import { Mirroring } from "./mirroring.js";
 import { Filler } from "./filler.js";
 import { Synchronizer } from "./synchronizer.js";
 import { Swapper } from "./swapper.js";
 import { AdvisoryLock } from "./advisory-lock.js";
+
+/**
+ * Table privileges pgslice knows how to re-issue on new partitions, mapped to
+ * their SQL keyword. Privilege names come from `aclexplode`; anything not in
+ * this allow-list is skipped so we never emit an unrecognized keyword.
+ */
+const GRANTABLE_PRIVILEGES: Record<string, ReturnType<typeof sql.fragment>> = {
+  SELECT: sql.fragment`SELECT`,
+  INSERT: sql.fragment`INSERT`,
+  UPDATE: sql.fragment`UPDATE`,
+  DELETE: sql.fragment`DELETE`,
+  TRUNCATE: sql.fragment`TRUNCATE`,
+  REFERENCES: sql.fragment`REFERENCES`,
+  TRIGGER: sql.fragment`TRIGGER`,
+};
 
 interface PgsliceOptions {
   /**
@@ -266,15 +293,26 @@ export class Pgslice {
 
   /**
    * Adds partitions to a partitioned table.
+   *
+   * Returns the names of the partitions that were created (empty when every
+   * target period is already covered, which keeps re-runs idempotent).
    */
   async addPartitions(
     connection: DatabasePoolConnection,
     options: AddPartitionsOptions,
-  ): Promise<void> {
+  ): Promise<string[]> {
     const originalTable = Table.parse(options.table);
 
     return connection.transaction(async (tx) =>
       this.#withLock(tx, originalTable, "add_partitions", async () => {
+        // Pin the transaction to UTC. Partition boundaries are UTC calendar
+        // dates; without this, reading an existing timestamptz bound via
+        // pg_get_expr renders it in the session timezone (so the parsed
+        // boundary day drifts) and emitting a date/timestamptz literal coerces
+        // it through the session timezone — either of which misaligns the new
+        // partitions against the existing ones under a non-UTC session.
+        await tx.query(sql.typeAlias("void")`SET LOCAL TIME ZONE 'UTC'`);
+
         const targetTable = options.intermediate
           ? originalTable.intermediate
           : originalTable;
@@ -295,29 +333,123 @@ export class Pgslice {
         const past = options.past ?? 0;
         const future = options.future ?? 0;
 
-        // Determine which table to get the primary key from.
-        // For intermediate tables, use the original table.
-        // For swapped tables, use the last existing partition (if any) or the original.
-        let schemaTable: Table;
-        if (options.intermediate) {
-          schemaTable = originalTable;
-        } else {
-          const existingPartitions = await targetTable.partitions(tx);
-          schemaTable =
-            existingPartitions.length > 0
-              ? existingPartitions[existingPartitions.length - 1]
-              : originalTable;
+        // If the partitioned parent owns a primary key, Postgres propagates it
+        // (and any partitioned indexes) to each new partition automatically, so
+        // we must not add a per-partition primary key. Otherwise we follow the
+        // classic pgslice model and add the key to each partition ourselves,
+        // supporting composite keys.
+        const parentPrimaryKey = await targetTable.primaryKeyColumns(tx);
+        let partitionPrimaryKey: string[] = [];
+        if (parentPrimaryKey.length === 0) {
+          // Classic model only: read the key to replicate onto each new
+          // partition from the original table (intermediate flow) or the last
+          // existing partition. Native (parent-owned-PK) tables skip this query.
+          const schemaTable = options.intermediate
+            ? originalTable
+            : ((await targetTable.partitions(tx)).at(-1) ?? originalTable);
+          partitionPrimaryKey = await this.#partitionPrimaryKeyColumns(
+            tx,
+            schemaTable,
+          );
         }
 
-        const primaryKeyColumn = await schemaTable.primaryKey(tx);
+        // Read grants from the original table, the source of truth. In the
+        // intermediate flow targetTable is the freshly-prepped intermediate
+        // (which carries no grants), so reading it would silently inherit
+        // nothing; in the retrofit flow originalTable === targetTable.
+        const grants =
+          (options.inheritGrants ?? true) ? await originalTable.grants(tx) : [];
 
-        const dateRanges = new DateRanges({
-          period: settings.period,
-          past,
-          future,
-        });
+        // Read existing partition bounds (empty for the intermediate/prep
+        // flow, which operates on a freshly-created intermediate table).
+        const existingRanges = options.intermediate
+          ? []
+          : await targetTable.rangePartitionBounds(tx);
+        const finiteRanges = existingRanges.filter((r) => !r.isDefault);
 
-        for (const range of dateRanges) {
+        let ranges: Iterable<DateRange>;
+        if (finiteRanges.length === 0) {
+          // Fresh table (or the prep/intermediate flow): generate calendar-
+          // aligned ranges centered on today, the classic pgslice behavior.
+          ranges = new DateRanges({
+            today: options.now,
+            period: settings.period,
+            past,
+            future,
+            format: settings.format,
+          });
+        } else {
+          // Existing partitioned table: extend contiguously from the current
+          // coverage by partition *bounds*, independent of the legacy naming
+          // or week-alignment scheme. This recognizes partitions created
+          // outside pgslice (so it never renames or collides with them) and
+          // continues whatever scheme they use without a gap or overlap at the
+          // boundary.
+          const today = roundDate(options.now ?? new Date(), settings.period);
+          const candidates: DateRange[] = [];
+
+          // Forward extension fills every period from the last existing bound
+          // to the horizon (today + future periods). With future = 0 the
+          // horizon is today, so the current period is still created if not yet
+          // covered — matching the fresh-table path, which always includes
+          // today. If a table lapsed, this back-fills the whole gap in one run
+          // — intended, and bounded by MAX_GENERATED_PARTITIONS.
+          const maxUpper = maxUpperBound(existingRanges);
+          const unboundedAbove = finiteRanges.some((r) => r.upperUnbounded);
+          if (maxUpper && !unboundedAbove) {
+            // Bounds-anchored extension emits new boundaries at UTC midnight
+            // (see formatDateForSql), so it can only continue a table whose
+            // existing boundaries are UTC-midnight too. A non-midnight anchor
+            // otherwise yields a silent no-op (the midnight-rounded horizon can
+            // fall short of it) or a CREATE-time overlap — reject it loudly.
+            if (!isUtcMidnight(maxUpper)) {
+              throw new Error(
+                `${targetTable.name}: existing partition boundary ${maxUpper.toISOString()} is not UTC-midnight aligned; bounds-anchored extension only supports midnight-aligned boundaries`,
+              );
+            }
+            const horizon = advanceDate(today, settings.period, future);
+            for (const range of extendRanges({
+              anchorStart: maxUpper,
+              period: settings.period,
+              horizon,
+              format: settings.format,
+            })) {
+              candidates.push(range);
+            }
+          }
+
+          const minLower = minLowerBound(existingRanges);
+          const unboundedBelow = finiteRanges.some((r) => r.lowerUnbounded);
+          if (minLower && !unboundedBelow && past > 0) {
+            // Same UTC-midnight requirement as the forward anchor above.
+            if (!isUtcMidnight(minLower)) {
+              throw new Error(
+                `${targetTable.name}: existing partition boundary ${minLower.toISOString()} is not UTC-midnight aligned; bounds-anchored extension only supports midnight-aligned boundaries`,
+              );
+            }
+            const horizon = advanceDate(today, settings.period, -past);
+            for (const range of extendRangesBackward({
+              anchorEnd: minLower,
+              period: settings.period,
+              horizon,
+              format: settings.format,
+            })) {
+              candidates.push(range);
+            }
+          }
+
+          // Defensive: drop any candidate that would overlap existing coverage.
+          // Anchored generation shouldn't produce one, but this keeps re-runs
+          // idempotent and guards against an unexpected existing layout.
+          ranges = candidates.filter(
+            (c) =>
+              !existingRanges.some((r) => rangeOverlaps(c.start, c.end, r)),
+          );
+        }
+
+        const created: string[] = [];
+
+        for (const range of ranges) {
           const partitionTable = originalTable.partition(range.suffix);
 
           if (await partitionTable.exists(tx)) {
@@ -340,14 +472,73 @@ export class Pgslice {
 
           await tx.query(sql.typeAlias("void")`${createSql}`);
 
-          await tx.query(
-            sql.typeAlias("void")`
-            ALTER TABLE ${partitionTable.sqlIdentifier}
-            ADD PRIMARY KEY (${sql.identifier([primaryKeyColumn])})
-          `,
-          );
+          if (partitionPrimaryKey.length > 0) {
+            await tx.query(
+              sql.typeAlias("void")`
+              ALTER TABLE ${partitionTable.sqlIdentifier}
+              ADD PRIMARY KEY (${sql.join(
+                partitionPrimaryKey.map((col) => sql.identifier([col])),
+                sql.fragment`, `,
+              )})
+            `,
+            );
+          }
+
+          for (const grant of grants) {
+            await this.#applyGrant(tx, partitionTable, grant);
+          }
+
+          created.push(partitionTable.name);
         }
+
+        return created;
       }),
+    );
+  }
+
+  /**
+   * Resolves the primary key columns to place on each new partition in the
+   * classic pgslice model (where the parent has no primary key of its own).
+   * Returns the explicit (possibly composite) key when one exists; otherwise
+   * falls back to the implicit single-column `id` of {@link Table.primaryKey}.
+   */
+  async #partitionPrimaryKeyColumns(
+    tx: DatabaseTransactionConnection,
+    schemaTable: Table,
+  ): Promise<string[]> {
+    const columns = await schemaTable.primaryKeyColumns(tx);
+    if (columns.length > 0) {
+      return columns;
+    }
+    return [await schemaTable.primaryKey(tx)];
+  }
+
+  /**
+   * Re-issues a single grant from the parent table onto a new partition.
+   * Unrecognized privileges are skipped rather than emitted unsafely.
+   */
+  async #applyGrant(
+    tx: DatabaseTransactionConnection,
+    table: Table,
+    grant: TableGrant,
+  ): Promise<void> {
+    const privilege = GRANTABLE_PRIVILEGES[grant.privilege];
+    if (!privilege) {
+      return;
+    }
+
+    const grantee =
+      grant.grantee === null
+        ? sql.fragment`PUBLIC`
+        : sql.fragment`${sql.identifier([grant.grantee])}`;
+    const grantOption = grant.grantable
+      ? sql.fragment` WITH GRANT OPTION`
+      : sql.fragment``;
+
+    await tx.query(
+      sql.typeAlias("void")`
+        GRANT ${privilege} ON TABLE ${table.sqlIdentifier} TO ${grantee}${grantOption}
+      `,
     );
   }
 
