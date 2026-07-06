@@ -75,6 +75,42 @@ describe("Pgslice.addPartitions (retrofit)", () => {
       ]);
     });
 
+    test("defaults to a 5s lock_timeout for the add_partitions transaction", async ({
+      pgslice,
+      transaction,
+    }) => {
+      await pgslice.addPartitions(transaction, { table: "posts", future: 1 });
+
+      // addPartitions opens its own (sub)transaction; passing this test's
+      // transaction makes that a SAVEPOINT, and a released savepoint's SET LOCAL
+      // propagates to the parent — so reading it here proves it was applied
+      // inside the add_partitions transaction that ran the CREATE ... PARTITION OF.
+      const result = await transaction.one(
+        sql.type(z.object({ lock_timeout: z.string() }))`
+          SHOW lock_timeout
+        `,
+      );
+      expect(result.lock_timeout).toBe("5s");
+    });
+
+    test("honors a custom lockTimeout override", async ({
+      pgslice,
+      transaction,
+    }) => {
+      await pgslice.addPartitions(transaction, {
+        table: "posts",
+        future: 1,
+        lockTimeout: "10s",
+      });
+
+      const result = await transaction.one(
+        sql.type(z.object({ lock_timeout: z.string() }))`
+          SHOW lock_timeout
+        `,
+      );
+      expect(result.lock_timeout).toBe("10s");
+    });
+
     test("new partitions inherit the parent composite key and gain no duplicate PK", async ({
       pgslice,
       transaction,

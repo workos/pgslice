@@ -401,6 +401,45 @@ describe("Pgslice.maintain (fleet)", () => {
       );
       expect(grants.map((g) => g.privilege)).toContain("SELECT");
     });
+
+    test("forwards a custom lockTimeout to the add_partitions transaction", async ({
+      pgslice,
+      transaction,
+    }) => {
+      await nativeParent(
+        transaction,
+        "posts",
+        "created_at",
+        TS,
+        "month",
+        "date",
+      );
+      await addChild(
+        transaction,
+        "posts",
+        "posts_y2026m01",
+        "2026-01-01",
+        "2026-02-01",
+      );
+
+      await pgslice.maintain(transaction, {
+        futureDaily: 1,
+        futureWeekly: 1,
+        futureMonthly: 1,
+        futureYearly: 1,
+        lockTimeout: "10s",
+      });
+
+      // addPartitions runs in a savepoint whose released SET LOCAL propagates to
+      // this transaction, so a "10s" reading here proves maintain forwarded the
+      // override all the way through to the partition-creation statements.
+      const result = await transaction.one(
+        sql.type(z.object({ lock_timeout: z.string() }))`
+          SHOW lock_timeout
+        `,
+      );
+      expect(result.lock_timeout).toBe("10s");
+    });
   });
 
   describe("classic pgslice tables", () => {
