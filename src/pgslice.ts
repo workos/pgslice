@@ -320,6 +320,17 @@ export class Pgslice {
         // partitions against the existing ones under a non-UTC session.
         await tx.query(sql.typeAlias("void")`SET LOCAL TIME ZONE 'UTC'`);
 
+        // Bound how long the CREATE ... PARTITION OF statements may wait on the
+        // parent's lock, so a scheduled run backs off instead of blocking
+        // writers queued behind it. On timeout the statement errors, the
+        // transaction rolls back, and the table is reported as a failed
+        // extension to be retried on the next run.
+        await tx.query(
+          sql.typeAlias(
+            "void",
+          )`SET LOCAL lock_timeout = ${sql.literalValue(options.lockTimeout ?? "5s")}`,
+        );
+
         const targetTable = options.intermediate
           ? originalTable.intermediate
           : originalTable;
@@ -588,6 +599,7 @@ export class Pgslice {
           future: futureByPeriod[period],
           tablespace: options.tablespace,
           inheritGrants: options.inheritGrants,
+          lockTimeout: options.lockTimeout,
           now,
         });
 

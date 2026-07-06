@@ -73,6 +73,10 @@ export class MaintainCommand extends BaseCommand {
     description:
       "Copy each parent table's privileges onto its new partitions (default: true; disable with --no-inherit-grants)",
   });
+  lockTimeout = Option.String("--lock-timeout", "5s", {
+    description:
+      "How long each partition-creation statement waits on a table's lock before backing off (default: 5s)",
+  });
 
   override async perform(pgslice: Pgslice): Promise<number | void> {
     // maintain emits structured records (start, per-table, final); write each as
@@ -98,6 +102,7 @@ export class MaintainCommand extends BaseCommand {
           schema: this.schema,
           tablespace: this.tablespace,
           inheritGrants: this.inheritGrants,
+          lockTimeout: this.lockTimeout,
         },
         log,
       ),

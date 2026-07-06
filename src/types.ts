@@ -78,6 +78,12 @@ export interface AddPartitionsOptions {
    * period boundary uses a consistent horizon for every table.
    */
   now?: Date;
+  /**
+   * How long each partition-creation statement may wait on the parent's lock
+   * before backing off, rather than blocking writers queued behind it. Any
+   * Postgres interval literal (e.g. "5s"). Defaults to "5s".
+   */
+  lockTimeout?: string;
 }
 
 import type { MirroringTargetType } from "./mirroring.js";
@@ -256,6 +262,12 @@ export interface MaintainOptions {
   schema?: string;
   tablespace?: string;
   inheritGrants?: boolean;
+  /**
+   * How long each partition-creation statement may wait on a table's lock
+   * before backing off, rather than blocking writers queued behind it. Any
+   * Postgres interval literal (e.g. "5s"). Defaults to "5s".
+   */
+  lockTimeout?: string;
   /**
    * The reference "now" for choosing each table's partition horizon. Defaults
    * to a single instant captured when the run starts, so a fleet run that

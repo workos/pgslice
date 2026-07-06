@@ -50,6 +50,10 @@ export class AddPartitionsCommand extends BaseCommand {
     description:
       "Copy the parent table's privileges onto each new partition (default: true; disable with --no-inherit-grants)",
   });
+  lockTimeout = Option.String("--lock-timeout", "5s", {
+    description:
+      "How long each partition-creation statement waits on the parent's lock before backing off (default: 5s)",
+  });
 
   override async perform(pgslice: Pgslice): Promise<void> {
     const created = await pgslice.start(async (tx) =>
@@ -60,6 +64,7 @@ export class AddPartitionsCommand extends BaseCommand {
         future: this.future,
         tablespace: this.tablespace,
         inheritGrants: this.inheritGrants,
+        lockTimeout: this.lockTimeout,
       }),
     );
 
