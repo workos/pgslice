@@ -10,7 +10,8 @@ interface LogEntry {
   level: string;
   target: { db: string; host: string; schema?: string; table?: string };
   future?: { daily: number; weekly: number; monthly: number; yearly: number };
-  partitions?: { new: number; total: number };
+  dropExpired?: boolean;
+  partitions?: { new: number; dropped: number; total: number };
   success?: number;
   succeeded?: { count: number; tables: string[] };
   failed?: { count: number; tables: string[] };
@@ -90,6 +91,7 @@ describe("MaintainCommand", () => {
     expect(table?.target.schema).toBe("public");
     expect(table?.partitions).toEqual({
       new: expect.any(Number),
+      dropped: 0,
       total: expect.any(Number),
     });
 
@@ -180,8 +182,62 @@ describe("MaintainCommand", () => {
     expect(table?.msg).toBe("Table already up to date; no extension needed");
     expect(table?.level).toBe("info");
     expect(table?.success).toBe(1);
-    expect(table?.partitions).toEqual({ new: 0, total: 1 });
+    expect(table?.partitions).toEqual({ new: 0, dropped: 0, total: 1 });
     expect(table?.target.host).toBe("localhost");
+  });
+
+  async function createExpiredPosts(
+    transaction: DatabaseTransactionConnection,
+  ) {
+    await createPosts(transaction);
+    await transaction.query(sql.unsafe`
+      COMMENT ON TABLE posts IS 'column:created_at,period:month,cast:date,version:3,retention:1'
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts_y2020m01 PARTITION OF posts
+      FOR VALUES FROM ('2020-01-01') TO ('2020-02-01')
+    `);
+  }
+
+  test("does not drop expired partitions by default", async ({
+    cli,
+    commandContext,
+    transaction,
+  }) => {
+    await createExpiredPosts(transaction);
+
+    expect(await cli.run(["maintain"], commandContext)).toBe(0);
+
+    const logs = jsonLines(commandContext.stdout.read()?.toString());
+    expect(logs[0].dropExpired).toBe(false);
+    expect(
+      logs.find((entry) => entry.target.table === "posts")?.partitions?.dropped,
+    ).toBe(0);
+  });
+
+  test("drops expired partitions with --drop-expired", async ({
+    cli,
+    commandContext,
+    transaction,
+  }) => {
+    await createExpiredPosts(transaction);
+
+    expect(await cli.run(["maintain", "--drop-expired"], commandContext)).toBe(
+      0,
+    );
+
+    const logs = jsonLines(commandContext.stdout.read()?.toString());
+    expect(logs[0].dropExpired).toBe(true);
+    // This suite runs on the real clock, so how many months fall outside the
+    // one-month window varies; the 2020 partition is always among them.
+    expect(
+      logs.find((entry) => entry.target.table === "posts")?.partitions?.dropped,
+    ).toBeGreaterThanOrEqual(1);
+    expect(
+      await transaction.oneFirst(
+        sql.unsafe`SELECT to_regclass('posts_y2020m01') IS NULL`,
+      ),
+    ).toBe(true);
   });
 
   test("reads per-period horizons from PGSLICE_FUTURE_* env vars", async ({

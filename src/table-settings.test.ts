@@ -49,6 +49,24 @@ describe("TableSettings", () => {
       expect(settings?.format).toBeUndefined();
     });
 
+    it("parses an optional retention", () => {
+      const settings = TableSettings.parseFromComment(
+        "column:created_at,period:month,cast:date,version:3,retention:3",
+      );
+      expect(settings?.retention).toBe(3);
+    });
+
+    it.each(["", "0", "-1", "1.5", "3m", " 3", "abc"])(
+      "ignores an invalid retention %j rather than pruning",
+      (value) => {
+        const settings = TableSettings.parseFromComment(
+          `column:created_at,period:month,cast:date,retention:${value}`,
+        );
+        expect(settings).not.toBeNull();
+        expect(settings?.retention).toBeUndefined();
+      },
+    );
+
     describe("periods", () => {
       it("parses day period", () => {
         const settings = TableSettings.parseFromComment(

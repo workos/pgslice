@@ -109,6 +109,16 @@ function derivePartitionTimeFilter(
   };
 }
 
+/**
+ * An existing partition's RANGE bounds, together with whether it is a leaf
+ * (a plain table) rather than a sub-partitioned child.
+ */
+export interface PartitionBound extends ExistingRange {
+  schema: string;
+  name: string;
+  leaf: boolean;
+}
+
 export interface PartitionContext {
   settings: TableSettings | null;
   partitions: Table[];
@@ -475,16 +485,28 @@ export class Table {
    * rendered instant as UTC, so under a non-UTC session every bound would shift
    * by the session offset. `addPartitions` pins UTC before calling this.
    */
-  async rangePartitionBounds(tx: CommonQueryMethods): Promise<ExistingRange[]> {
+  async rangePartitionBounds(
+    tx: CommonQueryMethods,
+  ): Promise<PartitionBound[]> {
     const rows = await tx.any(
-      sql.type(z.object({ name: z.string(), bound: z.string() }))`
+      sql.type(
+        z.object({
+          schema: z.string(),
+          name: z.string(),
+          bound: z.string(),
+          leaf: z.boolean(),
+        }),
+      )`
         SELECT
+          nmsp_child.nspname AS schema,
           child.relname AS name,
-          pg_get_expr(child.relpartbound, child.oid) AS bound
+          pg_get_expr(child.relpartbound, child.oid) AS bound,
+          child.relkind = 'r' AS leaf
         FROM pg_inherits
           JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
           JOIN pg_class child ON pg_inherits.inhrelid = child.oid
           JOIN pg_namespace nmsp_parent ON nmsp_parent.oid = parent.relnamespace
+          JOIN pg_namespace nmsp_child ON nmsp_child.oid = child.relnamespace
         WHERE
           nmsp_parent.nspname = ${this.schema} AND
           parent.relname = ${this.name}
@@ -493,7 +515,9 @@ export class Table {
 
     return rows.flatMap((r) => {
       const parsed = parseRangeBound(r.bound);
-      return parsed ? [{ ...parsed, name: r.name }] : [];
+      return parsed
+        ? [{ ...parsed, schema: r.schema, name: r.name, leaf: r.leaf }]
+        : [];
     });
   }
 

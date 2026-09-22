@@ -344,9 +344,38 @@ If the partitioned parent owns a primary key (including a composite key), Postgr
 
 By default, pgslice re-issues the parent table's grants on each new partition, because Postgres does not cascade a parent's grants to its partitions. This keeps a replication/CDC role's access intact as new partitions appear. Disable it with `--no-inherit-grants`.
 
+## Dropping Expired Partitions
+
+Give a table a retention by adding `retention:<N>` to its settings comment. The current period plus the `N` periods before it are kept; older partitions are expired.
+
+```sql
+COMMENT ON TABLE <table> IS 'column:created_at,period:month,cast:date,version:3,retention:3';
+```
+
+Preview, then drop, the expired partitions:
+
+```sh
+pgslice drop_partitions <table> --dry-run
+pgslice drop_partitions <table>
+```
+
+Or prune every managed table that has a retention as part of `maintain` (off by default):
+
+```sh
+pgslice maintain --drop-expired
+```
+
+Partitions are selected **by bounds**, not by name: a partition is expired when its range ends at or before the start of the period `N` periods ago. `DEFAULT` and `MINVALUE`/`MAXVALUE` partitions, and sub-partitioned children, are never dropped. Tables without a `retention` are never pruned, and an invalid value (anything but a positive integer) is ignored.
+
+Dropping a partition takes an `ACCESS EXCLUSIVE` lock on the parent, so queries against the table queue behind a drop that is waiting for its lock. To keep that short, each partition is dropped oldest-first in its own transaction under `--lock-timeout` (default: `5s`). If the lock isn't acquired in time, the run stops without dropping anything further — leaving the retained partitions contiguous — and the rest is retried on the next run. Nothing is dropped with `CASCADE`, so a partition that a view or other object depends on fails loudly instead.
+
+### Logical replication
+
+`DROP TABLE` is not decoded by logical replication: no `DELETE`s are emitted, replication slots are unaffected, and changes made to a partition before it was dropped are still delivered. Downstream copies built from logical replication therefore keep the dropped rows. If a downstream system is your archive, confirm it has the data before a partition expires, and note that re-syncing it from the source later won't bring dropped data back.
+
 ## Archiving Partitions
 
-Back up and drop older partitions each day, month, or year.
+To keep a copy outside the database, back up older partitions before they expire.
 
 ```sh
 pg_dump -c -Fc -t <table>_202409 $PGSLICE_URL > <table>_202409.dump

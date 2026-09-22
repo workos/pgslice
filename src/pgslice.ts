@@ -15,6 +15,7 @@ import type {
   AnalyzeOptions,
   ColumnInfo,
   DisableMirroringOptions,
+  DropPartitionsOptions,
   EnableMirroringOptions,
   FillBatchResult,
   FillOptions,
@@ -40,10 +41,12 @@ import {
   advanceDate,
   extendRanges,
   extendRangesBackward,
+  isExpired,
   isUtcMidnight,
   maxUpperBound,
   minLowerBound,
   rangeOverlaps,
+  retentionCutoff,
   roundDate,
   type DateRange,
 } from "./date-ranges.js";
@@ -68,6 +71,21 @@ const GRANTABLE_PRIVILEGES: Record<string, ReturnType<typeof sql.fragment>> = {
   REFERENCES: sql.fragment`REFERENCES`,
   TRIGGER: sql.fragment`TRIGGER`,
 };
+
+/**
+ * Raised when dropping an expired partition fails part-way through. Earlier
+ * partitions were each dropped in their own committed transaction, so
+ * `dropped` records what was already removed before the failure.
+ */
+export class DropPartitionsError extends Error {
+  constructor(
+    message: string,
+    readonly dropped: string[],
+  ) {
+    super(message);
+    this.name = "DropPartitionsError";
+  }
+}
 
 interface PgsliceOptions {
   /**
@@ -515,6 +533,105 @@ export class Pgslice {
   }
 
   /**
+   * Drops a table's expired partitions: leaf partitions whose range ends at or
+   * before the retention cutoff (the start of the period `retention` periods
+   * before the current one, per the table's settings comment). A table without
+   * a `retention` setting is never pruned.
+   *
+   * Only finite, bounded leaf partitions qualify; DEFAULT and
+   * `MINVALUE`/`MAXVALUE` partitions are never dropped, and nothing is dropped
+   * with CASCADE, so a partition that another object depends on fails loudly
+   * instead of taking the dependent with it.
+   *
+   * Dropping a partition takes an `ACCESS EXCLUSIVE` lock on the parent, so
+   * each partition is dropped in its own short transaction under
+   * `lock_timeout`, oldest first. On a lock timeout the run stops (leaving
+   * retained coverage contiguous) and a {@link DropPartitionsError} reports
+   * what was already dropped; the remainder is retried on the next run.
+   *
+   * Returns the names of the partitions dropped, or with `dryRun` the names
+   * that would be.
+   */
+  async dropPartitions(
+    connection: DatabasePoolConnection,
+    options: DropPartitionsOptions,
+  ): Promise<string[]> {
+    const table = Table.parse(options.table);
+    const now = options.now ?? new Date();
+
+    const { cutoff, expired } = await connection.transaction(async (tx) => {
+      // Bounds are compared as UTC instants; see rangePartitionBounds.
+      await tx.query(sql.typeAlias("void")`SET LOCAL TIME ZONE 'UTC'`);
+
+      if (!(await table.exists(tx))) {
+        throw new Error(`Table not found: ${table.toString()}`);
+      }
+
+      const settings = await table.fetchSettings(tx);
+      if (!settings) {
+        throw new Error(`No settings found: ${table.toString()}`);
+      }
+      if (settings.retention === undefined) {
+        throw new Error(`No retention configured: ${table.toString()}`);
+      }
+
+      const cutoff = retentionCutoff(now, settings.period, settings.retention);
+      const expired = (await table.rangePartitionBounds(tx))
+        .filter((range) => range.leaf && isExpired(range, cutoff))
+        .sort((a, b) => (a.upper?.getTime() ?? 0) - (b.upper?.getTime() ?? 0));
+
+      return { cutoff, expired };
+    });
+
+    if (options.dryRun) {
+      return expired.map((range) => range.name);
+    }
+
+    const dropped: string[] = [];
+
+    for (const range of expired) {
+      try {
+        await connection.transaction(async (tx) =>
+          this.#withLock(tx, table, "drop_partitions", async () => {
+            await tx.query(sql.typeAlias("void")`SET LOCAL TIME ZONE 'UTC'`);
+            await tx.query(
+              sql.typeAlias(
+                "void",
+              )`SET LOCAL lock_timeout = ${sql.literalValue(options.lockTimeout ?? "5s")}`,
+            );
+
+            // Re-read inside this transaction so a partition that was detached,
+            // re-attached elsewhere, or replaced since the scan is left alone.
+            const current = (await table.rangePartitionBounds(tx)).find(
+              (r) => r.schema === range.schema && r.name === range.name,
+            );
+            if (!current?.leaf || !isExpired(current, cutoff)) {
+              return;
+            }
+
+            await tx.query(
+              sql.typeAlias("void")`
+                DROP TABLE ${sql.identifier([range.schema, range.name])}
+              `,
+            );
+            dropped.push(range.name);
+          }),
+        );
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        const suffix =
+          dropped.length > 0 ? ` (already dropped: ${dropped.join(", ")})` : "";
+        throw new DropPartitionsError(
+          `Failed to drop ${range.schema}.${range.name}: ${reason}${suffix}`,
+          dropped,
+        );
+      }
+    }
+
+    return dropped;
+  }
+
+  /**
    * Maintains every managed partitioned table the connection can see: each
    * partitioned parent (`relkind = 'p'`) carrying a valid pgslice settings
    * comment is discovered from the catalog and extended via {@link addPartitions}.
@@ -529,6 +646,10 @@ export class Pgslice {
    * primary key and no replica-identity DDL is required. After extending each
    * table this verifies every leaf has a usable replica identity, surfacing a
    * misconfigured table rather than silently shipping a CDC-unsafe partition.
+   *
+   * With `dropExpired`, each table whose settings comment carries a
+   * `retention` also has its expired partitions dropped via
+   * {@link dropPartitions}, after it is extended.
    *
    * Each table is maintained independently: a failure on one table (for example
    * a non-empty DEFAULT partition that blocks creating the next one) is recorded
@@ -579,6 +700,7 @@ export class Pgslice {
         monthly: futureByPeriod.month,
         yearly: futureByPeriod.year,
       },
+      dropExpired: options.dropExpired ?? false,
     });
 
     const managed = await this.#discoverManagedTables(
@@ -590,18 +712,36 @@ export class Pgslice {
     const succeeded: string[] = [];
     const failed: string[] = [];
 
-    for (const { table, period } of managed) {
+    for (const { table, settings } of managed) {
       let result: MaintainResult;
+      let partitionsCreated: string[] = [];
+      let partitionsDropped: string[] = [];
       try {
-        const partitionsCreated = await this.addPartitions(connection, {
+        partitionsCreated = await this.addPartitions(connection, {
           table: table.toString(),
           past,
-          future: futureByPeriod[period],
+          future: futureByPeriod[settings.period],
           tablespace: options.tablespace,
           inheritGrants: options.inheritGrants,
           lockTimeout: options.lockTimeout,
           now,
         });
+
+        // Extend before pruning, so a failed drop never costs the table runway.
+        if (options.dropExpired && settings.retention !== undefined) {
+          try {
+            partitionsDropped = await this.dropPartitions(connection, {
+              table: table.toString(),
+              lockTimeout: options.lockTimeout,
+              now,
+            });
+          } catch (error) {
+            if (error instanceof DropPartitionsError) {
+              partitionsDropped = error.dropped;
+            }
+            throw error;
+          }
+        }
 
         const { model, partitionCount, unsafePartitions } =
           await connection.transaction(async (tx) => {
@@ -621,6 +761,7 @@ export class Pgslice {
           table: table.toString(),
           model,
           partitionsCreated,
+          partitionsDropped,
           partitionCount,
           replicaIdentityReady: unsafePartitions.length === 0,
           unsafePartitions,
@@ -630,7 +771,8 @@ export class Pgslice {
         result = {
           table: table.toString(),
           model: null,
-          partitionsCreated: [],
+          partitionsCreated,
+          partitionsDropped,
           partitionCount: 0,
           replicaIdentityReady: false,
           unsafePartitions: [],
@@ -650,10 +792,15 @@ export class Pgslice {
         msg = result.error;
       } else if (!result.replicaIdentityReady) {
         msg = `Partitions without a usable replica identity (CDC-unsafe): ${result.unsafePartitions.join(", ")}`;
-      } else if (result.partitionsCreated.length === 0) {
+      } else if (
+        result.partitionsCreated.length === 0 &&
+        result.partitionsDropped.length === 0
+      ) {
         msg = "Table already up to date; no extension needed";
-      } else {
+      } else if (result.partitionsCreated.length > 0) {
         msg = "Extended table successfully";
+      } else {
+        msg = "Dropped expired partitions successfully";
       }
 
       log({
@@ -663,8 +810,12 @@ export class Pgslice {
         target: { ...target, schema: table.schema, table: table.name },
         partitions: {
           new: result.partitionsCreated.length,
+          dropped: result.partitionsDropped.length,
           total: result.partitionCount,
         },
+        // Dropping is irreversible, so name each dropped partition in the log
+        // rather than only counting them.
+        droppedPartitions: result.partitionsDropped,
         success: ok ? 1 : 0,
       });
     }
@@ -694,7 +845,7 @@ export class Pgslice {
   async #discoverManagedTables(
     connection: DatabasePoolConnection,
     schema?: string,
-  ): Promise<Array<{ table: Table; period: Period }>> {
+  ): Promise<Array<{ table: Table; settings: TableSettings }>> {
     const schemaFilter = schema
       ? sql.fragment`AND n.nspname = ${schema}`
       : sql.fragment``;
@@ -729,7 +880,7 @@ export class Pgslice {
       }
       const settings = TableSettings.parseFromComment(row.comment);
       return settings
-        ? [{ table: new Table(row.schema, row.name), period: settings.period }]
+        ? [{ table: new Table(row.schema, row.name), settings }]
         : [];
     });
   }

@@ -15,6 +15,13 @@ export class TableSettings {
      * keep its existing naming convention; see {@link formatDateSuffix}.
      */
     readonly format?: string,
+    /**
+     * Optional number of past periods to retain before the current one. When
+     * set, partitions whose range ends at or before the start of the period
+     * `retention` periods ago are eligible for {@link Pgslice.dropPartitions}.
+     * Absent means the table is never pruned.
+     */
+    readonly retention?: number,
   ) {}
 
   /**
@@ -27,6 +34,7 @@ export class TableSettings {
     let period: Period | undefined;
     let cast: Cast | undefined;
     let format: string | undefined;
+    let retention: number | undefined;
 
     for (const part of parts) {
       // Split on the first ":" only, so a value that itself contains a colon
@@ -45,11 +53,15 @@ export class TableSettings {
         // Stored verbatim; validated when rendered/parsed (compileFormat), so a
         // mistyped template fails loudly at add_partitions time rather than here.
         format = value;
+      } else if (key === "retention" && /^[1-9]\d*$/.test(value)) {
+        // Only a positive integer is accepted. Anything else leaves retention
+        // unset, so a mistyped value can never widen what gets dropped.
+        retention = Number(value);
       }
     }
 
     if (column && period && cast) {
-      return new TableSettings(column, period, cast, format);
+      return new TableSettings(column, period, cast, format, retention);
     }
 
     return null;
