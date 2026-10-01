@@ -30,8 +30,10 @@ import { Pgslice } from "./pgslice.js";
 
 const NOW = new Date(Date.UTC(2026, 0, 15));
 const DATABASE = `pgslice_attach_${process.pid}`;
-const READER = "pgslice_attach_reader";
-const WRITER = "pgslice_attach_writer";
+// Roles are cluster-wide, so they are suffixed like the database and dropped
+// with it.
+const READER = `pgslice_attach_reader_${process.pid}`;
+const WRITER = `pgslice_attach_writer_${process.pid}`;
 
 function databaseUrl(database: string, applicationName: string): string {
   const url = new URL(process.env.PGSLICE_URL ?? "");
@@ -55,12 +57,10 @@ beforeAll(async () => {
   );
   await admin.query(sql.unsafe`CREATE DATABASE ${sql.identifier([DATABASE])}`);
   for (const role of [READER, WRITER]) {
-    await admin.query(sql.unsafe`
-      DO $$ BEGIN
-        CREATE ROLE ${sql.identifier([role])};
-      EXCEPTION WHEN duplicate_object THEN NULL;
-      END $$
-    `);
+    await admin.query(
+      sql.unsafe`DROP ROLE IF EXISTS ${sql.identifier([role])}`,
+    );
+    await admin.query(sql.unsafe`CREATE ROLE ${sql.identifier([role])}`);
   }
   pool = await createPool(databaseUrl(DATABASE, "attach-test"), {
     maximumPoolSize: 10,
@@ -72,6 +72,11 @@ afterAll(async () => {
   await admin?.query(
     sql.unsafe`DROP DATABASE IF EXISTS ${sql.identifier([DATABASE])}`,
   );
+  for (const role of [READER, WRITER]) {
+    await admin?.query(
+      sql.unsafe`DROP ROLE IF EXISTS ${sql.identifier([role])}`,
+    );
+  }
   await admin?.end();
 });
 
@@ -811,7 +816,7 @@ describe("end to end", { timeout: 60_000 }, () => {
     );
     await pool.query(sql.unsafe`
       INSERT INTO t.visits (path, created_at)
-      SELECT 'p' || g, now() - (g || ' days')::interval
+      SELECT 'p' || g, ${sql.timestamp(NOW)} - (g || ' days')::interval
       FROM generate_series(0, 20) g
     `);
 
@@ -829,6 +834,7 @@ describe("end to end", { timeout: 60_000 }, () => {
         intermediate: true,
         past: 1,
         future: 1,
+        now: NOW,
       }),
     );
     expect(created).toHaveLength(3);
@@ -864,7 +870,7 @@ describe("end to end", { timeout: 60_000 }, () => {
     expect(grantedToReader).toHaveLength(3);
 
     const results = await pgslice.start((c) =>
-      pgslice.maintain(c, { schema: "t", futureMonthly: 3 }),
+      pgslice.maintain(c, { schema: "t", futureMonthly: 3, now: NOW }),
     );
     expect(results).toHaveLength(1);
     expect(results[0].error).toBeNull();

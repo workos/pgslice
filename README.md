@@ -363,7 +363,7 @@ Postgres takes stronger locks on a few related tables. `PARTITION OF` takes the 
 - **Foreign keys from the parent:** `SHARE ROW EXCLUSIVE` on each referenced table. An open transaction that wrote the referenced table blocks partition creation, and writes to that table queue behind it while it waits.
 - **A `DEFAULT` partition:** `ACCESS EXCLUSIVE` on the default partition, which Postgres scans for rows that belong in the new range. If it finds any, creation fails. Keep default partitions small or empty.
 
-All partitions for a table are created in one transaction bounded by `--lock-timeout` (default `5s`). If any lock wait times out, the whole transaction rolls back, nothing is left behind, and `maintain` reports the table as failed so the next run retries it. If a table with a new partition's name already exists but is not attached, pgslice stops with an error instead of adopting it.
+All partitions for a table are created in one transaction. `--lock-timeout` (default `5s`) bounds each individual lock wait, not the transaction as a whole, so a run that creates many partitions can wait up to that long more than once. If any lock wait times out, the whole transaction rolls back, nothing is left behind, and `maintain` reports the table as failed so the next run retries it. If a table with a new partition's name already exists but is not attached, pgslice stops with an error instead of adopting it.
 
 ## Archiving Partitions
 
