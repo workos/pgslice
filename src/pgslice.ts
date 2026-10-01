@@ -320,11 +320,11 @@ export class Pgslice {
         // partitions against the existing ones under a non-UTC session.
         await tx.query(sql.typeAlias("void")`SET LOCAL TIME ZONE 'UTC'`);
 
-        // Bound how long the CREATE ... PARTITION OF statements may wait on the
-        // parent's lock, so a scheduled run backs off instead of blocking
-        // writers queued behind it. On timeout the statement errors, the
-        // transaction rolls back, and the table is reported as a failed
-        // extension to be retried on the next run.
+        // Bound how long partition creation may wait on a lock, so a scheduled
+        // run backs off instead of blocking queries queued behind it. On
+        // timeout the statement errors, the transaction rolls back, and the
+        // table is reported as a failed extension to be retried on the next
+        // run.
         await tx.query(
           sql.typeAlias(
             "void",
@@ -465,24 +465,63 @@ export class Pgslice {
           );
         }
 
+        // Columns, NOT NULL, defaults, CHECK constraints, storage and generated
+        // expressions must match the parent for ATTACH to accept the table.
+        // Indexes (including a parent-owned primary key), foreign keys and row
+        // triggers are deliberately left out: ATTACH clones them from the
+        // parent exactly as PARTITION OF would. IDENTITY is left out because it
+        // would give each partition its own sequence.
+        const includings = [
+          sql.fragment`DEFAULTS`,
+          sql.fragment`CONSTRAINTS`,
+          sql.fragment`STORAGE`,
+          sql.fragment`GENERATED`,
+        ];
+        if ((await getServerVersionNum(tx)) >= 140000) {
+          includings.push(sql.fragment`COMPRESSION`);
+        }
+
         const created: string[] = [];
 
         for (const range of ranges) {
           const partitionTable = originalTable.partition(range.suffix);
 
           if (await partitionTable.exists(tx)) {
+            // Creating and attaching happen in this one transaction, so an
+            // unattached table with this name was not left behind by pgslice.
+            // Skipping it would leave a hole in the partition coverage, and
+            // attaching a table we didn't create could adopt unexpected rows or
+            // schema, so stop and let an operator decide.
+            if (!(await partitionTable.isPartitionOf(tx, targetTable))) {
+              throw new Error(
+                `${partitionTable.toString()} already exists but is not a partition of ${targetTable.toString()}`,
+              );
+            }
             continue;
           }
 
           const startDate = formatDateForSql(range.start, settings.cast);
           const endDate = formatDateForSql(range.end, settings.cast);
 
-          // Build the CREATE TABLE statement
+          // Create the partition as a standalone table and then attach it,
+          // rather than using CREATE TABLE ... PARTITION OF. PARTITION OF takes
+          // an ACCESS EXCLUSIVE lock on the parent, so it waits behind any open
+          // transaction that has touched the parent and every query on the
+          // parent queues behind it. ATTACH PARTITION takes SHARE UPDATE
+          // EXCLUSIVE on the parent, which does not conflict with reads or
+          // writes. The new table is empty, so ATTACH's partition-constraint
+          // validation scan is free.
+          //
+          // ATTACH still takes stronger locks on other relations: SHARE ROW
+          // EXCLUSIVE on every table the parent references through a foreign
+          // key, and ACCESS EXCLUSIVE on a DEFAULT partition (which it scans
+          // for rows that belong in the new range). PARTITION OF takes the
+          // same locks; lock_timeout bounds the wait on all of them.
           let createSql = sql.fragment`
-          CREATE TABLE ${partitionTable.sqlIdentifier}
-          PARTITION OF ${targetTable.sqlIdentifier}
-          FOR VALUES FROM (${startDate}) TO (${endDate})
-        `;
+            CREATE TABLE ${partitionTable.sqlIdentifier}
+            (LIKE ${targetTable.sqlIdentifier}
+              INCLUDING ${sql.join(includings, sql.fragment` INCLUDING `)})
+          `;
 
           if (options.tablespace) {
             createSql = sql.fragment`${createSql} TABLESPACE ${sql.identifier([options.tablespace])}`;
@@ -505,6 +544,14 @@ export class Pgslice {
           for (const grant of grants) {
             await this.#applyGrant(tx, partitionTable, grant);
           }
+
+          await tx.query(
+            sql.typeAlias("void")`
+              ALTER TABLE ${targetTable.sqlIdentifier}
+              ATTACH PARTITION ${partitionTable.sqlIdentifier}
+              FOR VALUES FROM (${startDate}) TO (${endDate})
+            `,
+          );
 
           created.push(partitionTable.name);
         }
