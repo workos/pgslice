@@ -481,6 +481,12 @@ export class Pgslice {
           includings.push(sql.fragment`COMPRESSION`);
         }
 
+        // PARTITION OF places a new partition in the parent's tablespace unless
+        // one is given; a standalone CREATE TABLE would use the database
+        // default, so carry the parent's over explicitly.
+        const tablespace =
+          options.tablespace ?? (await targetTable.tablespace(tx));
+
         const created: string[] = [];
 
         for (const range of ranges) {
@@ -523,8 +529,8 @@ export class Pgslice {
               INCLUDING ${sql.join(includings, sql.fragment` INCLUDING `)})
           `;
 
-          if (options.tablespace) {
-            createSql = sql.fragment`${createSql} TABLESPACE ${sql.identifier([options.tablespace])}`;
+          if (tablespace) {
+            createSql = sql.fragment`${createSql} TABLESPACE ${sql.identifier([tablespace])}`;
           }
 
           await tx.query(sql.typeAlias("void")`${createSql}`);

@@ -47,6 +47,7 @@ const pgsliceUrl = () => new URL(databaseUrl(DATABASE, "pgslice"));
 let admin: DatabasePool;
 let pool: DatabasePool;
 let pgslice: Pgslice;
+const createdRoles: string[] = [];
 
 beforeAll(async () => {
   admin = await createPool(
@@ -57,10 +58,10 @@ beforeAll(async () => {
   );
   await admin.query(sql.unsafe`CREATE DATABASE ${sql.identifier([DATABASE])}`);
   for (const role of [READER, WRITER]) {
-    await admin.query(
-      sql.unsafe`DROP ROLE IF EXISTS ${sql.identifier([role])}`,
-    );
+    // Fails loudly rather than reusing (and later dropping) a role this suite
+    // didn't create.
     await admin.query(sql.unsafe`CREATE ROLE ${sql.identifier([role])}`);
+    createdRoles.push(role);
   }
   pool = await createPool(databaseUrl(DATABASE, "attach-test"), {
     maximumPoolSize: 10,
@@ -72,7 +73,7 @@ afterAll(async () => {
   await admin?.query(
     sql.unsafe`DROP DATABASE IF EXISTS ${sql.identifier([DATABASE])}`,
   );
-  for (const role of [READER, WRITER]) {
+  for (const role of createdRoles) {
     await admin?.query(
       sql.unsafe`DROP ROLE IF EXISTS ${sql.identifier([role])}`,
     );
@@ -798,6 +799,31 @@ describe("tablespace", { timeout: 30_000 }, () => {
           `,
         ),
       ).toBe(tablespace);
+    },
+  );
+
+  test.skipIf(!tablespace)(
+    "defaults to the parent's tablespace, as PARTITION OF does",
+    async () => {
+      await createPosts();
+      await pool.query(
+        sql.unsafe`ALTER TABLE t.posts SET TABLESPACE ${sql.identifier([tablespace ?? ""])}`,
+      );
+      await pool.query(
+        partitionOfStatement("posts_202602", "2026-02-01", "2026-03-01"),
+      );
+      expect(await addPartitions("t.posts", { future: 2 })).toEqual([
+        "posts_202603",
+      ]);
+      expect(
+        await pool.anyFirst(
+          sql.type(z.object({ spcname: z.string().nullable() }))`
+            SELECT spcname FROM pg_class c
+            LEFT JOIN pg_tablespace s ON s.oid = c.reltablespace
+            WHERE c.oid IN ('t.posts_202602'::regclass, 't.posts_202603'::regclass)
+          `,
+        ),
+      ).toEqual([tablespace, tablespace]);
     },
   );
 });

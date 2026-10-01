@@ -258,6 +258,20 @@ export class Table {
   }
 
   /**
+   * The tablespace this table was explicitly placed in, or null when it uses
+   * the database default.
+   */
+  async tablespace(connection: CommonQueryMethods): Promise<string | null> {
+    return connection.maybeOneFirst(
+      sql.type(z.object({ spcname: z.string() }))`
+        SELECT s.spcname FROM pg_class c
+        JOIN pg_tablespace s ON s.oid = c.reltablespace
+        WHERE c.oid = ${this.regclassLiteral}::regclass
+      `,
+    );
+  }
+
+  /**
    * Checks if a trigger with the given name exists on this table.
    */
   async triggerExists(
