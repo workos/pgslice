@@ -241,6 +241,37 @@ export class Table {
   }
 
   /**
+   * Checks if this table is attached as a partition of `parent`.
+   */
+  async isPartitionOf(
+    connection: CommonQueryMethods,
+    parent: Table,
+  ): Promise<boolean> {
+    const result = await connection.one(
+      sql.type(z.object({ count: z.coerce.number() }))`
+        SELECT COUNT(*) FROM pg_inherits
+        WHERE inhrelid = ${this.regclassLiteral}::regclass
+          AND inhparent = ${parent.regclassLiteral}::regclass
+      `,
+    );
+    return result.count > 0;
+  }
+
+  /**
+   * The tablespace this table was explicitly placed in, or null when it uses
+   * the database default.
+   */
+  async tablespace(connection: CommonQueryMethods): Promise<string | null> {
+    return connection.maybeOneFirst(
+      sql.type(z.object({ spcname: z.string() }))`
+        SELECT s.spcname FROM pg_class c
+        JOIN pg_tablespace s ON s.oid = c.reltablespace
+        WHERE c.oid = ${this.regclassLiteral}::regclass
+      `,
+    );
+  }
+
+  /**
    * Checks if a trigger with the given name exists on this table.
    */
   async triggerExists(

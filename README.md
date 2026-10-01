@@ -204,20 +204,32 @@ pgslice add_partitions visits --intermediate --past 1 --future 1
 ```sql
 BEGIN;
 
-CREATE TABLE "public"."visits_202408" PARTITION OF "public"."visits_intermediate" FOR VALUES FROM ('2024-08-01') TO ('2024-09-01');
+SET LOCAL TIME ZONE 'UTC';
+
+SET LOCAL lock_timeout = '5s';
+
+CREATE TABLE "public"."visits_202408" (LIKE "public"."visits_intermediate" INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING STORAGE INCLUDING GENERATED);
 
 ALTER TABLE "public"."visits_202408" ADD PRIMARY KEY ("id");
 
-CREATE TABLE "public"."visits_202409" PARTITION OF "public"."visits_intermediate" FOR VALUES FROM ('2024-09-01') TO ('2024-10-01');
+ALTER TABLE "public"."visits_intermediate" ATTACH PARTITION "public"."visits_202408" FOR VALUES FROM ('2024-08-01') TO ('2024-09-01');
+
+CREATE TABLE "public"."visits_202409" (LIKE "public"."visits_intermediate" INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING STORAGE INCLUDING GENERATED);
 
 ALTER TABLE "public"."visits_202409" ADD PRIMARY KEY ("id");
 
-CREATE TABLE "public"."visits_202410" PARTITION OF "public"."visits_intermediate" FOR VALUES FROM ('2024-10-01') TO ('2024-11-01');
+ALTER TABLE "public"."visits_intermediate" ATTACH PARTITION "public"."visits_202409" FOR VALUES FROM ('2024-09-01') TO ('2024-10-01');
+
+CREATE TABLE "public"."visits_202410" (LIKE "public"."visits_intermediate" INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING STORAGE INCLUDING GENERATED);
 
 ALTER TABLE "public"."visits_202410" ADD PRIMARY KEY ("id");
 
+ALTER TABLE "public"."visits_intermediate" ATTACH PARTITION "public"."visits_202410" FOR VALUES FROM ('2024-10-01') TO ('2024-11-01');
+
 COMMIT;
 ```
+
+On Postgres 14+, `INCLUDING COMPRESSION` is added to each `LIKE` clause.
 
 ```sh
 pgslice fill visits
@@ -343,6 +355,17 @@ If the partitioned parent owns a primary key (including a composite key), Postgr
 ### Grants
 
 By default, pgslice re-issues the parent table's grants on each new partition, because Postgres does not cascade a parent's grants to its partitions. This keeps a replication/CDC role's access intact as new partitions appear. Disable it with `--no-inherit-grants`.
+
+### Locking
+
+Each new partition is created as a standalone table (`CREATE TABLE ... (LIKE <parent> ...)`) and then attached with `ALTER TABLE <parent> ATTACH PARTITION`, rather than with `CREATE TABLE ... PARTITION OF`. `PARTITION OF` takes an `ACCESS EXCLUSIVE` lock on the parent, so it waits behind any open transaction that has read or written the parent, and every later query on the parent queues behind it. `ATTACH PARTITION` takes `SHARE UPDATE EXCLUSIVE` on the parent, which does not conflict with reads or writes. It still conflicts with other DDL, `ANALYZE`, `VACUUM` and `CREATE INDEX` on the parent. The resulting partition is identical to one created with `PARTITION OF`: Postgres clones the parent's indexes, primary key, foreign keys and row triggers during the attach.
+
+Postgres takes stronger locks on a few related tables. `PARTITION OF` takes the same ones:
+
+- **Foreign keys from the parent:** `SHARE ROW EXCLUSIVE` on each referenced table. An open transaction that wrote the referenced table blocks partition creation, and writes to that table queue behind it while it waits.
+- **A `DEFAULT` partition:** `ACCESS EXCLUSIVE` on the default partition, which Postgres scans for rows that belong in the new range. If it finds any, creation fails. Keep default partitions small or empty.
+
+All partitions for a table are created in one transaction. `--lock-timeout` (default `5s`) bounds each individual lock wait, not the transaction as a whole, so a run that creates many partitions can wait up to that long more than once. If any lock wait times out, the whole transaction rolls back, nothing is left behind, and `maintain` reports the table as failed so the next run retries it. If a table with a new partition's name already exists but is not attached, pgslice stops with an error instead of adopting it.
 
 ## Archiving Partitions
 

@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Changed `add_partitions` and `maintain` to create partitions with `CREATE TABLE ... (LIKE ...)` + `ATTACH PARTITION`, which takes `SHARE UPDATE EXCLUSIVE` on the parent instead of `ACCESS EXCLUSIVE`, so partition creation no longer waits behind or blocks reads and writes on the parent
+- Changed `add_partitions` to fail when a table with a new partition's name exists but is not attached, instead of silently skipping it
 - Added support for managing existing (already-partitioned) tables: bounds-anchored extension that recognizes legacy-named partitions and extends contiguously without renaming, gaps, or overlaps
 - Added a weekly (ISO-week, Monday-aligned) period
 - Added composite / parent-owned primary key support to `add_partitions` (skips the redundant per-partition key when the parent owns one)
