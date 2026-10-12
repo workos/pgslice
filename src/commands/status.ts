@@ -46,7 +46,13 @@ export class StatusCommand extends BaseCommand {
         `Mirror trigger exists: ${status.mirrorTriggerExists}\n`,
       );
       this.context.stdout.write(
+        `Mirror trigger enabled: ${status.mirrorTriggerEnabled}\n`,
+      );
+      this.context.stdout.write(
         `Retired mirror trigger exists: ${status.retiredMirrorTriggerExists}\n`,
+      );
+      this.context.stdout.write(
+        `Retired mirror trigger enabled: ${status.retiredMirrorTriggerEnabled}\n`,
       );
     }
   }

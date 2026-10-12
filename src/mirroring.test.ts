@@ -3,6 +3,8 @@ import { DatabaseTransactionConnection, sql } from "slonik";
 import { z } from "zod";
 
 import { pgsliceTest as test } from "./testing/index.js";
+import { Mirroring } from "./mirroring.js";
+import { Table } from "./table.js";
 
 describe("Pgslice.enableMirroring", () => {
   test.beforeEach(async ({ transaction }) => {
@@ -646,6 +648,41 @@ describe("Pgslice.disableMirroring (disable vs drop)", () => {
         `,
       );
       expect(disabled).toBe(0);
+    });
+
+    test("drop locks the parent before it drops anything", async ({
+      transaction,
+    }) => {
+      const issued: string[] = [];
+      const recording: DatabaseTransactionConnection = {
+        ...transaction,
+        async query(query) {
+          issued.push(query.sql.replace(/\s+/g, " ").trim());
+          return transaction.query(query);
+        },
+      };
+
+      await new Mirroring({
+        source: Table.parse("posts"),
+        targetType: "retired",
+      }).drop(recording);
+
+      expect(issued[0]).toMatch(
+        /^LOCK TABLE "public"\."posts" IN ACCESS EXCLUSIVE MODE$/,
+      );
+      expect(issued[1]).toMatch(/^DROP TRIGGER IF EXISTS/);
+      expect(issued[2]).toMatch(/^DROP FUNCTION IF EXISTS/);
+
+      const held = await transaction.oneFirst(
+        sql.type(z.object({ count: z.coerce.number() }))`
+          SELECT COUNT(*)::int FROM pg_locks
+          WHERE relation = 'posts'::regclass
+            AND pid = pg_backend_pid()
+            AND mode = 'AccessExclusiveLock'
+            AND granted
+        `,
+      );
+      expect(held).toBe(1);
     });
 
     test("drop removes the trigger from the parent and every partition", async ({
