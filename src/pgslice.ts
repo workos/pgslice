@@ -124,22 +124,6 @@ export class Pgslice {
     return this.pool.connect(handler);
   }
 
-  /**
-   * Bounds how long DDL in this transaction may wait for a table lock, so a
-   * contended run fails fast and is retried instead of queueing live traffic
-   * behind it. Uses the same default as `swap`.
-   */
-  async #setLockTimeout(
-    tx: DatabaseTransactionConnection,
-    lockTimeout: string | undefined,
-  ): Promise<void> {
-    await tx.query(
-      sql.typeAlias(
-        "void",
-      )`SET LOCAL lock_timeout = ${sql.literalValue(lockTimeout ?? "5s")}`,
-    );
-  }
-
   async #withLock<T>(
     tx: CommonQueryMethods,
     table: Table,
@@ -819,7 +803,11 @@ export class Pgslice {
           throw new Error(`Table not found: ${target.toString()}`);
         }
 
-        await this.#setLockTimeout(tx, options.lockTimeout);
+        await tx.query(
+          sql.typeAlias(
+            "void",
+          )`SET LOCAL lock_timeout = ${sql.literalValue(options.lockTimeout ?? "5s")}`,
+        );
         await new Mirroring({ source: table, targetType }).enable(tx, target);
       }),
     );
@@ -843,7 +831,11 @@ export class Pgslice {
           throw new Error(`Table not found: ${table.toString()}`);
         }
 
-        await this.#setLockTimeout(tx, options.lockTimeout);
+        await tx.query(
+          sql.typeAlias(
+            "void",
+          )`SET LOCAL lock_timeout = ${sql.literalValue(options.lockTimeout ?? "5s")}`,
+        );
         await new Mirroring({ source: table, targetType }).disable(tx);
       }),
     );
