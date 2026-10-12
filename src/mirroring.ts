@@ -20,7 +20,8 @@ interface MirroringOptions {
  * taking an ACCESS EXCLUSIVE lock on each partition before the parent.
  * Statements enter through the parent and lock it first, so the two walk the
  * same relations in opposite orders and deadlock under live traffic. Dropping
- * therefore locks the parent explicitly before anything else.
+ * therefore locks the parent explicitly before anything else, and so does
+ * enabling, which drops any existing trigger before recreating it.
  */
 export class Mirroring {
   readonly #source: Table;
@@ -47,6 +48,7 @@ export class Mirroring {
       target,
     );
 
+    await this.#lockSource(tx);
     await tx.query(sql.typeAlias("void")`${functionSql}`);
     await tx.query(sql.typeAlias("void")`${this.#dropTriggerSql}`);
     await tx.query(sql.typeAlias("void")`${this.#createTriggerSql}`);
@@ -56,13 +58,17 @@ export class Mirroring {
    * Disables mirroring by dropping the trigger and function.
    */
   async disable(tx: DatabaseTransactionConnection): Promise<void> {
+    await this.#lockSource(tx);
+    await tx.query(sql.typeAlias("void")`${this.#dropTriggerSql}`);
+    await tx.query(sql.typeAlias("void")`${this.#dropFunctionSql}`);
+  }
+
+  async #lockSource(tx: DatabaseTransactionConnection): Promise<void> {
     await tx.query(
       sql.typeAlias("void")`
         LOCK TABLE ${this.#source.sqlIdentifier} IN ACCESS EXCLUSIVE MODE
       `,
     );
-    await tx.query(sql.typeAlias("void")`${this.#dropTriggerSql}`);
-    await tx.query(sql.typeAlias("void")`${this.#dropFunctionSql}`);
   }
 
   get #functionName() {

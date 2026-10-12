@@ -449,6 +449,47 @@ describe("Pgslice.disableMirroring (partitioned table)", () => {
     expect(held).toBe(1);
   });
 
+  test("enable locks the parent before it drops and recreates the trigger", async ({
+    transaction,
+  }) => {
+    const issued: string[] = [];
+    const recording: DatabaseTransactionConnection = {
+      ...transaction,
+      async query(query) {
+        issued.push(query.sql.replace(/\s+/g, " ").trim());
+        return transaction.query(query);
+      },
+    };
+
+    await new Mirroring({
+      source: Table.parse("posts"),
+      targetType: "retired",
+    }).enable(recording, Table.parse("posts_retired"));
+
+    const lockIndex = issued.findIndex((statement) =>
+      /^LOCK TABLE "public"\."posts" IN ACCESS EXCLUSIVE MODE$/.test(statement),
+    );
+    const dropIndex = issued.findIndex((statement) =>
+      /^DROP TRIGGER IF EXISTS/.test(statement),
+    );
+    expect(lockIndex).toBeGreaterThanOrEqual(0);
+    expect(dropIndex).toBeGreaterThan(lockIndex);
+  });
+
+  test("re-running enable leaves one trigger on the parent and each partition", async ({
+    pgslice,
+    transaction,
+  }) => {
+    await pgslice.enableMirroring(transaction, {
+      table: "posts",
+      targetType: "retired",
+    });
+
+    expect(
+      await triggerCount(transaction, "posts_retired_mirror_trigger"),
+    ).toBe(3);
+  });
+
   test("removes the trigger from the parent and every partition", async ({
     pgslice,
     transaction,
