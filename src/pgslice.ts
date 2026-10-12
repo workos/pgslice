@@ -844,12 +844,7 @@ export class Pgslice {
         }
 
         await this.#setLockTimeout(tx, options.lockTimeout);
-        const mirroring = new Mirroring({ source: table, targetType });
-        if (options.drop) {
-          await mirroring.drop(tx);
-        } else {
-          await mirroring.disable(tx);
-        }
+        await new Mirroring({ source: table, targetType }).disable(tx);
       }),
     );
   }
@@ -1037,20 +1032,14 @@ export class Pgslice {
       partitionCount = partitions.length;
     }
 
-    const mirroring = new Mirroring({
-      source: table,
-      targetType: "intermediate",
-    });
-    const retiredMirroring = new Mirroring({
-      source: table,
-      targetType: "retired",
-    });
-
-    const mirrorTriggerExists = await mirroring.exists(this.pool);
-    const mirrorTriggerEnabled = await mirroring.enabled(this.pool);
-    const retiredMirrorTriggerExists = await retiredMirroring.exists(this.pool);
-    const retiredMirrorTriggerEnabled = await retiredMirroring.enabled(
+    const mirrorTriggerExists = await table.triggerExists(
       this.pool,
+      Mirroring.triggerNameFor(table, "intermediate"),
+    );
+
+    const retiredMirrorTriggerExists = await table.triggerExists(
+      this.pool,
+      Mirroring.triggerNameFor(table, "retired"),
     );
 
     const originalIsPartitioned = await table.isPartitioned(this.pool);
@@ -1059,9 +1048,7 @@ export class Pgslice {
       intermediateExists,
       partitionCount,
       mirrorTriggerExists,
-      mirrorTriggerEnabled,
       retiredMirrorTriggerExists,
-      retiredMirrorTriggerEnabled,
       originalIsPartitioned,
     };
   }

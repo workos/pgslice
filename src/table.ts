@@ -261,29 +261,6 @@ export class Table {
   }
 
   /**
-   * Checks if a trigger with the given name exists on this table and fires.
-   * A trigger turned off with ALTER TABLE ... DISABLE TRIGGER still exists but
-   * does not fire.
-   */
-  async triggerEnabled(
-    connection: CommonQueryMethods,
-    triggerName: string,
-  ): Promise<boolean> {
-    const result = await connection.one(
-      sql.type(z.object({ count: z.coerce.number() }))`
-        SELECT COUNT(*) FROM pg_trigger t
-        JOIN pg_class c ON t.tgrelid = c.oid
-        JOIN pg_namespace n ON c.relnamespace = n.oid
-        WHERE n.nspname = ${this.schema}
-          AND c.relname = ${this.name}
-          AND t.tgname = ${triggerName}
-          AND t.tgenabled <> 'D'
-      `,
-    );
-    return result.count > 0;
-  }
-
-  /**
    * Gets column metadata for this table (excluding generated columns).
    */
   async columns(tx: DatabaseTransactionConnection): Promise<ColumnInfo[]> {

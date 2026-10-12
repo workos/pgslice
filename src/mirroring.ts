@@ -1,4 +1,4 @@
-import { CommonQueryMethods, DatabaseTransactionConnection } from "slonik";
+import { DatabaseTransactionConnection } from "slonik";
 
 import { Table } from "./table.js";
 import { sql } from "./sql-utils.js";
@@ -16,11 +16,11 @@ interface MirroringOptions {
  * table are automatically replicated to the target table.
  *
  * When the source is partitioned, Postgres clones the trigger onto every
- * partition, so changing it touches the parent and all of its partitions. Every
- * operation here locks the parent first. A statement already running finishes
- * with the locks it holds, and no new statement can take the parent and then
- * wait on a partition, which is the cycle that makes a bare `DROP TRIGGER` on a
- * busy partitioned parent deadlock against live traffic.
+ * partition, and `DROP TRIGGER` removes the clones before the parent trigger,
+ * taking an ACCESS EXCLUSIVE lock on each partition before the parent.
+ * Statements enter through the parent and lock it first, so the two walk the
+ * same relations in opposite orders and deadlock under live traffic. Dropping
+ * therefore locks the parent explicitly before anything else.
  */
 export class Mirroring {
   readonly #source: Table;
@@ -32,9 +32,7 @@ export class Mirroring {
   }
 
   /**
-   * Enables mirroring by creating (or refreshing) the trigger function and
-   * creating the trigger on the source table. A trigger that exists but was
-   * disabled is re-enabled in place rather than dropped and recreated.
+   * Enables mirroring by creating a trigger function and trigger on the source table.
    */
   async enable(
     tx: DatabaseTransactionConnection,
@@ -50,34 +48,14 @@ export class Mirroring {
     );
 
     await tx.query(sql.typeAlias("void")`${functionSql}`);
-
-    if (await this.exists(tx)) {
-      await this.#setEnabled(tx, true);
-    } else {
-      await tx.query(sql.typeAlias("void")`${this.#createTriggerSql}`);
-    }
+    await tx.query(sql.typeAlias("void")`${this.#dropTriggerSql}`);
+    await tx.query(sql.typeAlias("void")`${this.#createTriggerSql}`);
   }
 
   /**
-   * Disables mirroring by turning the trigger off. The trigger and its function
-   * stay in place, so mirroring can be re-enabled and the only lock taken is
-   * SHARE ROW EXCLUSIVE on each relation, parent first: reads are never blocked
-   * and writes wait only for the statement itself.
+   * Disables mirroring by dropping the trigger and function.
    */
   async disable(tx: DatabaseTransactionConnection): Promise<void> {
-    if (!(await this.exists(tx))) {
-      return;
-    }
-
-    await this.#setEnabled(tx, false);
-  }
-
-  /**
-   * Removes the trigger and its function. Locks the source first: `DROP
-   * TRIGGER` on a partitioned table otherwise locks the partitions before the
-   * parent and deadlocks against statements entering through the parent.
-   */
-  async drop(tx: DatabaseTransactionConnection): Promise<void> {
     await tx.query(
       sql.typeAlias("void")`
         LOCK TABLE ${this.#source.sqlIdentifier} IN ACCESS EXCLUSIVE MODE
@@ -85,41 +63,6 @@ export class Mirroring {
     );
     await tx.query(sql.typeAlias("void")`${this.#dropTriggerSql}`);
     await tx.query(sql.typeAlias("void")`${this.#dropFunctionSql}`);
-  }
-
-  /**
-   * Whether the mirroring trigger exists on the source table, enabled or not.
-   */
-  async exists(connection: CommonQueryMethods): Promise<boolean> {
-    return this.#source.triggerExists(
-      connection,
-      Mirroring.triggerNameFor(this.#source, this.#targetType),
-    );
-  }
-
-  /**
-   * Whether the mirroring trigger exists on the source table and fires.
-   */
-  async enabled(connection: CommonQueryMethods): Promise<boolean> {
-    return this.#source.triggerEnabled(
-      connection,
-      Mirroring.triggerNameFor(this.#source, this.#targetType),
-    );
-  }
-
-  async #setEnabled(
-    tx: DatabaseTransactionConnection,
-    enabled: boolean,
-  ): Promise<void> {
-    const action = enabled ? sql.fragment`ENABLE` : sql.fragment`DISABLE`;
-
-    // ALTER TABLE ... ENABLE/DISABLE TRIGGER on a partitioned table recurses
-    // to the cloned triggers on its partitions.
-    await tx.query(
-      sql.typeAlias("void")`
-        ALTER TABLE ${this.#source.sqlIdentifier} ${action} TRIGGER ${this.#triggerName}
-      `,
-    );
   }
 
   get #functionName() {

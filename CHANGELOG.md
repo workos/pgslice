@@ -1,8 +1,7 @@
 ## Unreleased
 
-- Changed `disable_mirroring` and `disable_retired_mirroring` to turn the trigger off with `ALTER TABLE ... DISABLE TRIGGER` instead of dropping it. On a partitioned table the drop locked every partition before the parent and deadlocked against live traffic; disabling locks the parent first, never blocks reads, and leaves the trigger and function in place so `enable_mirroring` can turn them back on. Pass `--drop` to remove the trigger and function, which now takes an explicit ACCESS EXCLUSIVE lock on the table first.
+- Fixed `disable_mirroring` and `disable_retired_mirroring` deadlocking against live traffic on a partitioned table. `DROP TRIGGER` on a partitioned parent locks every partition before the parent while statements lock the parent first; the source table is now locked explicitly before the trigger is dropped.
 - Added `--lock-timeout` (default `5s`) to the enable and disable mirroring commands, matching `swap`.
-- Added `mirrorTriggerEnabled` and `retiredMirrorTriggerEnabled` to `status`, so a disabled trigger is distinguishable from an active one.
 - Added support for managing existing (already-partitioned) tables: bounds-anchored extension that recognizes legacy-named partitions and extends contiguously without renaming, gaps, or overlaps
 - Added a weekly (ISO-week, Monday-aligned) period
 - Added composite / parent-owned primary key support to `add_partitions` (skips the redundant per-partition key when the parent owns one)

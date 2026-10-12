@@ -12,15 +12,13 @@ export class DisableRetiredMirroringCommand extends BaseCommand {
   static override usage = Command.Usage({
     description: "Disable retired mirroring triggers",
     details: `
-      This command turns off the trigger on the source table that mirrors
-      operations to the retired table. Use this when you no longer need to keep
-      the retired table in sync with the main table.
+      This command removes the triggers on the source table that mirror operations
+      to the retired table. Use this when you no longer need to keep the retired
+      table in sync with the main table.
 
-      The trigger is disabled, not dropped: on a partitioned table that takes a
-      light lock on the parent first and never blocks reads. Pass --drop to
-      remove the trigger and its function instead, which takes an ACCESS
-      EXCLUSIVE lock on the table for the duration of the drop. Either way the
-      lock wait is bounded by --lock-timeout.
+      The table is locked before the trigger is dropped, so this is safe on a
+      partitioned table under live traffic. The lock wait is bounded by
+      --lock-timeout; a timeout aborts cleanly and can be retried.
     `,
     examples: [
       [
@@ -30,10 +28,6 @@ export class DisableRetiredMirroringCommand extends BaseCommand {
       [
         "Disable retired mirroring with explicit schema",
         "$0 mirroring disable-retired myschema.posts",
-      ],
-      [
-        "Remove the trigger and function entirely",
-        "$0 mirroring disable-retired posts --drop",
       ],
       [
         "With custom lock timeout",
@@ -46,9 +40,6 @@ export class DisableRetiredMirroringCommand extends BaseCommand {
   lockTimeout = Option.String("--lock-timeout", "5s", {
     description: "Bound on how long to wait for the table lock",
   });
-  drop = Option.Boolean("--drop", false, {
-    description: "Drop the trigger and its function instead of disabling",
-  });
 
   override async perform(pgslice: Pgslice): Promise<void> {
     await pgslice.start(async (tx) => {
@@ -56,12 +47,9 @@ export class DisableRetiredMirroringCommand extends BaseCommand {
         table: this.table,
         targetType: "retired",
         lockTimeout: this.lockTimeout,
-        drop: this.drop,
       });
       this.context.stdout.write(
-        this.drop
-          ? `Retired mirroring triggers dropped for ${this.table}\n`
-          : `Retired mirroring triggers disabled for ${this.table}\n`,
+        `Retired mirroring triggers disabled for ${this.table}\n`,
       );
     });
   }

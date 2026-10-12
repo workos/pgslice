@@ -680,9 +680,7 @@ describe("Pgslice.status", () => {
       intermediateExists: false,
       partitionCount: 0,
       mirrorTriggerExists: false,
-      mirrorTriggerEnabled: false,
       retiredMirrorTriggerExists: false,
-      retiredMirrorTriggerEnabled: false,
       originalIsPartitioned: false,
     });
   });
@@ -708,82 +706,9 @@ describe("Pgslice.status", () => {
       partitionCount: 0,
       originalIsPartitioned: false,
       mirrorTriggerExists: false,
-      mirrorTriggerEnabled: false,
       retiredMirrorTriggerExists: false,
-      retiredMirrorTriggerEnabled: false,
     });
   });
-});
-
-describe("Pgslice.status mirroring flags", () => {
-  test.beforeEach(async ({ transaction }) => {
-    await transaction.query(sql.unsafe`
-      CREATE TABLE posts (
-        id SERIAL PRIMARY KEY,
-        created_at DATE NOT NULL
-      )
-    `);
-    await transaction.query(sql.unsafe`
-      CREATE TABLE posts_intermediate (
-        id SERIAL PRIMARY KEY,
-        created_at DATE NOT NULL
-      )
-    `);
-    await transaction.query(sql.unsafe`
-      CREATE TABLE posts_retired (
-        id SERIAL PRIMARY KEY,
-        created_at DATE NOT NULL
-      )
-    `);
-  });
-
-  for (const targetType of ["intermediate", "retired"] as const) {
-    const exists =
-      targetType === "intermediate"
-        ? "mirrorTriggerExists"
-        : "retiredMirrorTriggerExists";
-    const enabled =
-      targetType === "intermediate"
-        ? "mirrorTriggerEnabled"
-        : "retiredMirrorTriggerEnabled";
-
-    test(`tracks the ${targetType} trigger through enable, disable, re-enable and drop`, async ({
-      pgslice,
-      transaction,
-    }) => {
-      const flags = async () => {
-        const status = await pgslice.status({ table: "posts" });
-        return { exists: status[exists], enabled: status[enabled] };
-      };
-
-      expect(await flags()).toEqual({ exists: false, enabled: false });
-
-      await pgslice.enableMirroring(transaction, {
-        table: "posts",
-        targetType,
-      });
-      expect(await flags()).toEqual({ exists: true, enabled: true });
-
-      await pgslice.disableMirroring(transaction, {
-        table: "posts",
-        targetType,
-      });
-      expect(await flags()).toEqual({ exists: true, enabled: false });
-
-      await pgslice.enableMirroring(transaction, {
-        table: "posts",
-        targetType,
-      });
-      expect(await flags()).toEqual({ exists: true, enabled: true });
-
-      await pgslice.disableMirroring(transaction, {
-        table: "posts",
-        targetType,
-        drop: true,
-      });
-      expect(await flags()).toEqual({ exists: false, enabled: false });
-    });
-  }
 });
 
 describe("Pgslice.synchronize", () => {

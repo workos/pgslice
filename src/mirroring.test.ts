@@ -247,12 +247,9 @@ describe("Pgslice.disableMirroring", () => {
     `);
   });
 
-  test("drops trigger function with drop", async ({ pgslice, transaction }) => {
+  test("drops trigger function", async ({ pgslice, transaction }) => {
     await pgslice.enableMirroring(transaction, { table: "posts" });
-    await pgslice.disableMirroring(transaction, {
-      table: "posts",
-      drop: true,
-    });
+    await pgslice.disableMirroring(transaction, { table: "posts" });
 
     const count = await transaction.oneFirst(
       sql.type(z.object({ count: z.coerce.number() }))`
@@ -263,12 +260,9 @@ describe("Pgslice.disableMirroring", () => {
     expect(count).toBe(0);
   });
 
-  test("drops trigger with drop", async ({ pgslice, transaction }) => {
+  test("drops trigger", async ({ pgslice, transaction }) => {
     await pgslice.enableMirroring(transaction, { table: "posts" });
-    await pgslice.disableMirroring(transaction, {
-      table: "posts",
-      drop: true,
-    });
+    await pgslice.disableMirroring(transaction, { table: "posts" });
 
     const count = await transaction.oneFirst(
       sql.type(z.object({ count: z.coerce.number() }))`
@@ -344,10 +338,7 @@ describe("Pgslice.disableMirroring", () => {
     `);
 
     await pgslice.enableMirroring(transaction, { table: "myschema.posts" });
-    await pgslice.disableMirroring(transaction, {
-      table: "myschema.posts",
-      drop: true,
-    });
+    await pgslice.disableMirroring(transaction, { table: "myschema.posts" });
 
     const count = await transaction.oneFirst(
       sql.type(z.object({ count: z.coerce.number() }))`
@@ -370,7 +361,7 @@ describe("Pgslice.disableMirroring", () => {
   });
 });
 
-describe("Pgslice.disableMirroring (disable vs drop)", () => {
+describe("Pgslice.disableMirroring (partitioned table)", () => {
   const triggerCount = async (
     transaction: DatabaseTransactionConnection,
     name: string,
@@ -381,326 +372,116 @@ describe("Pgslice.disableMirroring (disable vs drop)", () => {
       `,
     );
 
-  const enabledTriggerCount = async (
-    transaction: DatabaseTransactionConnection,
-    name: string,
-  ) =>
-    transaction.oneFirst(
-      sql.type(z.object({ count: z.coerce.number() }))`
-        SELECT COUNT(*)::int FROM pg_trigger
-        WHERE tgname = ${name} AND tgenabled <> 'D'
-      `,
-    );
-
-  const functionCount = async (
-    transaction: DatabaseTransactionConnection,
-    name: string,
-  ) =>
-    transaction.oneFirst(
-      sql.type(z.object({ count: z.coerce.number() }))`
-        SELECT COUNT(*)::int FROM pg_proc WHERE proname = ${name}
-      `,
-    );
-
-  describe("plain table", () => {
-    test.beforeEach(async ({ pgslice, transaction }) => {
-      await transaction.query(sql.unsafe`
-        CREATE TABLE posts (
-          id SERIAL PRIMARY KEY,
-          title TEXT NOT NULL,
-          created_at DATE NOT NULL
-        )
-      `);
-      await transaction.query(sql.unsafe`
-        CREATE TABLE posts_retired (
-          id SERIAL PRIMARY KEY,
-          title TEXT NOT NULL,
-          created_at DATE NOT NULL
-        )
-      `);
-      await pgslice.enableMirroring(transaction, {
-        table: "posts",
-        targetType: "retired",
-      });
-    });
-
-    test("turns the trigger off but keeps the trigger and its function", async ({
-      pgslice,
-      transaction,
-    }) => {
-      await pgslice.disableMirroring(transaction, {
-        table: "posts",
-        targetType: "retired",
-      });
-
-      expect(
-        await triggerCount(transaction, "posts_retired_mirror_trigger"),
-      ).toBe(1);
-      expect(
-        await enabledTriggerCount(transaction, "posts_retired_mirror_trigger"),
-      ).toBe(0);
-      expect(await functionCount(transaction, "posts_mirror_to_retired")).toBe(
-        1,
-      );
-    });
-
-    test("stops mirroring writes once disabled", async ({
-      pgslice,
-      transaction,
-    }) => {
-      await pgslice.disableMirroring(transaction, {
-        table: "posts",
-        targetType: "retired",
-      });
-
-      await transaction.query(sql.unsafe`
-        INSERT INTO posts (title, created_at) VALUES ('Hello', '2024-01-15')
-      `);
-
-      const count = await transaction.oneFirst(
-        sql.type(z.object({ count: z.coerce.number() }))`
-          SELECT COUNT(*)::int FROM posts_retired
-        `,
-      );
-      expect(count).toBe(0);
-    });
-
-    test("enableMirroring turns a disabled trigger back on in place", async ({
-      pgslice,
-      transaction,
-    }) => {
-      await pgslice.disableMirroring(transaction, {
-        table: "posts",
-        targetType: "retired",
-      });
-      await pgslice.enableMirroring(transaction, {
-        table: "posts",
-        targetType: "retired",
-      });
-
-      expect(
-        await triggerCount(transaction, "posts_retired_mirror_trigger"),
-      ).toBe(1);
-      expect(
-        await enabledTriggerCount(transaction, "posts_retired_mirror_trigger"),
-      ).toBe(1);
-
-      await transaction.query(sql.unsafe`
-        INSERT INTO posts (title, created_at) VALUES ('Hello', '2024-01-15')
-      `);
-      const count = await transaction.oneFirst(
-        sql.type(z.object({ count: z.coerce.number() }))`
-          SELECT COUNT(*)::int FROM posts_retired
-        `,
-      );
-      expect(count).toBe(1);
-    });
-
-    test("drop removes the trigger and its function", async ({
-      pgslice,
-      transaction,
-    }) => {
-      await pgslice.disableMirroring(transaction, {
-        table: "posts",
-        targetType: "retired",
-        drop: true,
-      });
-
-      expect(
-        await triggerCount(transaction, "posts_retired_mirror_trigger"),
-      ).toBe(0);
-      expect(await functionCount(transaction, "posts_mirror_to_retired")).toBe(
-        0,
-      );
-    });
-
-    test("is idempotent when the trigger is already gone", async ({
-      pgslice,
-      transaction,
-    }) => {
-      await pgslice.disableMirroring(transaction, {
-        table: "posts",
-        targetType: "retired",
-        drop: true,
-      });
-      await pgslice.disableMirroring(transaction, {
-        table: "posts",
-        targetType: "retired",
-      });
-      await pgslice.disableMirroring(transaction, {
-        table: "posts",
-        targetType: "retired",
-        drop: true,
-      });
-
-      expect(
-        await triggerCount(transaction, "posts_retired_mirror_trigger"),
-      ).toBe(0);
-    });
-
-    test("bounds the lock wait with the requested lock_timeout", async ({
-      pgslice,
-      transaction,
-    }) => {
-      await pgslice.disableMirroring(transaction, {
-        table: "posts",
-        targetType: "retired",
-        lockTimeout: "7s",
-      });
-
-      const lockTimeout = await transaction.oneFirst(
-        sql.type(z.object({ lock_timeout: z.string() }))`SHOW lock_timeout`,
-      );
-      expect(lockTimeout).toBe("7s");
+  test.beforeEach(async ({ pgslice, transaction }) => {
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts (
+        id SERIAL,
+        title TEXT NOT NULL,
+        created_at DATE NOT NULL
+      ) PARTITION BY RANGE (created_at)
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE UNIQUE INDEX posts_replica_identity_uidx ON posts (id, created_at)
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts_202401 PARTITION OF posts
+        FOR VALUES FROM ('2024-01-01') TO ('2024-02-01')
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts_202402 PARTITION OF posts
+        FOR VALUES FROM ('2024-02-01') TO ('2024-03-01')
+    `);
+    await transaction.query(sql.unsafe`
+      ALTER TABLE posts_202401 ADD PRIMARY KEY (id)
+    `);
+    await transaction.query(sql.unsafe`
+      ALTER TABLE posts_202402 ADD PRIMARY KEY (id)
+    `);
+    await transaction.query(sql.unsafe`
+      CREATE TABLE posts_retired (
+        id INTEGER PRIMARY KEY,
+        title TEXT NOT NULL,
+        created_at DATE NOT NULL
+      )
+    `);
+    await pgslice.enableMirroring(transaction, {
+      table: "posts",
+      targetType: "retired",
     });
   });
 
-  describe("partitioned table", () => {
-    test.beforeEach(async ({ pgslice, transaction }) => {
-      await transaction.query(sql.unsafe`
-        CREATE TABLE posts (
-          id SERIAL,
-          title TEXT NOT NULL,
-          created_at DATE NOT NULL
-        ) PARTITION BY RANGE (created_at)
-      `);
-      await transaction.query(sql.unsafe`
-        CREATE UNIQUE INDEX posts_replica_identity_uidx ON posts (id, created_at)
-      `);
-      await transaction.query(sql.unsafe`
-        CREATE TABLE posts_202401 PARTITION OF posts
-          FOR VALUES FROM ('2024-01-01') TO ('2024-02-01')
-      `);
-      await transaction.query(sql.unsafe`
-        CREATE TABLE posts_202402 PARTITION OF posts
-          FOR VALUES FROM ('2024-02-01') TO ('2024-03-01')
-      `);
-      await transaction.query(sql.unsafe`
-        ALTER TABLE posts_202401 ADD PRIMARY KEY (id)
-      `);
-      await transaction.query(sql.unsafe`
-        ALTER TABLE posts_202402 ADD PRIMARY KEY (id)
-      `);
-      await transaction.query(sql.unsafe`
-        CREATE TABLE posts_retired (
-          id INTEGER PRIMARY KEY,
-          title TEXT NOT NULL,
-          created_at DATE NOT NULL
-        )
-      `);
-      await pgslice.enableMirroring(transaction, {
-        table: "posts",
-        targetType: "retired",
-      });
+  test("clones the trigger onto every partition", async ({ transaction }) => {
+    expect(
+      await triggerCount(transaction, "posts_retired_mirror_trigger"),
+    ).toBe(3);
+  });
+
+  test("locks the parent before it drops anything", async ({ transaction }) => {
+    const issued: string[] = [];
+    const recording: DatabaseTransactionConnection = {
+      ...transaction,
+      async query(query) {
+        issued.push(query.sql.replace(/\s+/g, " ").trim());
+        return transaction.query(query);
+      },
+    };
+
+    await new Mirroring({
+      source: Table.parse("posts"),
+      targetType: "retired",
+    }).disable(recording);
+
+    expect(issued[0]).toMatch(
+      /^LOCK TABLE "public"\."posts" IN ACCESS EXCLUSIVE MODE$/,
+    );
+    expect(issued[1]).toMatch(/^DROP TRIGGER IF EXISTS/);
+    expect(issued[2]).toMatch(/^DROP FUNCTION IF EXISTS/);
+
+    const held = await transaction.oneFirst(
+      sql.type(z.object({ count: z.coerce.number() }))`
+        SELECT COUNT(*)::int FROM pg_locks
+        WHERE relation = 'posts'::regclass
+          AND pid = pg_backend_pid()
+          AND mode = 'AccessExclusiveLock'
+          AND granted
+      `,
+    );
+    expect(held).toBe(1);
+  });
+
+  test("removes the trigger from the parent and every partition", async ({
+    pgslice,
+    transaction,
+  }) => {
+    await pgslice.disableMirroring(transaction, {
+      table: "posts",
+      targetType: "retired",
     });
 
-    test("disables the cloned trigger on every partition", async ({
-      pgslice,
-      transaction,
-    }) => {
-      await pgslice.disableMirroring(transaction, {
-        table: "posts",
-        targetType: "retired",
-      });
+    expect(
+      await triggerCount(transaction, "posts_retired_mirror_trigger"),
+    ).toBe(0);
+    const functions = await transaction.oneFirst(
+      sql.type(z.object({ count: z.coerce.number() }))`
+        SELECT COUNT(*)::int FROM pg_proc WHERE proname = 'posts_mirror_to_retired'
+      `,
+    );
+    expect(functions).toBe(0);
+  });
 
-      const rows = await transaction.any(
-        sql.type(z.object({ relname: z.string(), tgenabled: z.string() }))`
-          SELECT c.relname, t.tgenabled
-          FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-          WHERE t.tgname = 'posts_retired_mirror_trigger'
-          ORDER BY c.relname
-        `,
-      );
-      expect(rows).toEqual([
-        { relname: "posts", tgenabled: "D" },
-        { relname: "posts_202401", tgenabled: "D" },
-        { relname: "posts_202402", tgenabled: "D" },
-      ]);
-
-      await transaction.query(sql.unsafe`
-        INSERT INTO posts (title, created_at) VALUES ('Hello', '2024-02-15')
-      `);
-      const count = await transaction.oneFirst(
-        sql.type(z.object({ count: z.coerce.number() }))`
-          SELECT COUNT(*)::int FROM posts_retired
-        `,
-      );
-      expect(count).toBe(0);
+  test("bounds the lock wait with the requested lock_timeout", async ({
+    pgslice,
+    transaction,
+  }) => {
+    await pgslice.disableMirroring(transaction, {
+      table: "posts",
+      targetType: "retired",
+      lockTimeout: "7s",
     });
 
-    test("re-enables the cloned trigger on every partition", async ({
-      pgslice,
-      transaction,
-    }) => {
-      await pgslice.disableMirroring(transaction, {
-        table: "posts",
-        targetType: "retired",
-      });
-      await pgslice.enableMirroring(transaction, {
-        table: "posts",
-        targetType: "retired",
-      });
-
-      const disabled = await transaction.oneFirst(
-        sql.type(z.object({ count: z.coerce.number() }))`
-          SELECT COUNT(*)::int FROM pg_trigger
-          WHERE tgname = 'posts_retired_mirror_trigger' AND tgenabled = 'D'
-        `,
-      );
-      expect(disabled).toBe(0);
-    });
-
-    test("drop locks the parent before it drops anything", async ({
-      transaction,
-    }) => {
-      const issued: string[] = [];
-      const recording: DatabaseTransactionConnection = {
-        ...transaction,
-        async query(query) {
-          issued.push(query.sql.replace(/\s+/g, " ").trim());
-          return transaction.query(query);
-        },
-      };
-
-      await new Mirroring({
-        source: Table.parse("posts"),
-        targetType: "retired",
-      }).drop(recording);
-
-      expect(issued[0]).toMatch(
-        /^LOCK TABLE "public"\."posts" IN ACCESS EXCLUSIVE MODE$/,
-      );
-      expect(issued[1]).toMatch(/^DROP TRIGGER IF EXISTS/);
-      expect(issued[2]).toMatch(/^DROP FUNCTION IF EXISTS/);
-
-      const held = await transaction.oneFirst(
-        sql.type(z.object({ count: z.coerce.number() }))`
-          SELECT COUNT(*)::int FROM pg_locks
-          WHERE relation = 'posts'::regclass
-            AND pid = pg_backend_pid()
-            AND mode = 'AccessExclusiveLock'
-            AND granted
-        `,
-      );
-      expect(held).toBe(1);
-    });
-
-    test("drop removes the trigger from the parent and every partition", async ({
-      pgslice,
-      transaction,
-    }) => {
-      await pgslice.disableMirroring(transaction, {
-        table: "posts",
-        targetType: "retired",
-        drop: true,
-      });
-
-      expect(
-        await triggerCount(transaction, "posts_retired_mirror_trigger"),
-      ).toBe(0);
-      expect(await functionCount(transaction, "posts_mirror_to_retired")).toBe(
-        0,
-      );
-    });
+    const lockTimeout = await transaction.oneFirst(
+      sql.type(z.object({ lock_timeout: z.string() }))`SHOW lock_timeout`,
+    );
+    expect(lockTimeout).toBe("7s");
   });
 });

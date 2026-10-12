@@ -109,12 +109,6 @@ export interface DisableMirroringOptions {
   targetType?: MirroringTargetType;
   /** Bound on how long to wait for the table lock (default: 5s). */
   lockTimeout?: string;
-  /**
-   * Remove the trigger and its function instead of turning the trigger off.
-   * Takes an ACCESS EXCLUSIVE lock on the source table for the duration of the
-   * drop; the default only disables the trigger under a lighter lock.
-   */
-  drop?: boolean;
 }
 
 /**
@@ -238,11 +232,7 @@ export interface TableStatus {
   intermediateExists: boolean;
   partitionCount: number;
   mirrorTriggerExists: boolean;
-  /** The mirror trigger exists and fires; false when it exists but is disabled. */
-  mirrorTriggerEnabled: boolean;
   retiredMirrorTriggerExists: boolean;
-  /** The retired mirror trigger exists and fires; false when disabled. */
-  retiredMirrorTriggerEnabled: boolean;
   originalIsPartitioned: boolean;
 }
 

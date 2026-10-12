@@ -114,7 +114,7 @@ export class Swapper {
     const targetType =
       this.#direction === "forward" ? "intermediate" : "retired";
 
-    await new Mirroring({ source: this.#table, targetType }).drop(tx);
+    await new Mirroring({ source: this.#table, targetType }).disable(tx);
   }
 
   /**

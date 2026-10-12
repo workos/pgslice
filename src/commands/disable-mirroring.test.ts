@@ -1,6 +1,5 @@
 import { describe, expect } from "vitest";
 import { sql } from "slonik";
-import { z } from "zod";
 
 import { commandTest as test } from "../testing/index.js";
 import { DisableMirroringCommand } from "./disable-mirroring.js";
@@ -76,55 +75,6 @@ describe("DisableMirroringCommand", () => {
       expect(exitCode).toBe(0);
       const output = commandContext.stdout.read()?.toString();
       expect(output).toContain("Mirroring triggers disabled for posts");
-    });
-    test("keeps the trigger in place but disabled by default", async ({
-      cli,
-      commandContext,
-      pgslice,
-      transaction,
-    }) => {
-      await pgslice.enableMirroring(transaction, { table: "posts" });
-
-      const exitCode = await cli.run(
-        ["mirroring", "disable", "posts"],
-        commandContext,
-      );
-
-      expect(exitCode).toBe(0);
-      const trigger = await transaction.one(
-        sql.type(z.object({ tgenabled: z.string() }))`
-          SELECT tgenabled FROM pg_trigger WHERE tgname = 'posts_mirror_trigger'
-        `,
-      );
-      expect(trigger.tgenabled).toBe("D");
-    });
-
-    test("drops the trigger and function with --drop", async ({
-      cli,
-      commandContext,
-      pgslice,
-      transaction,
-    }) => {
-      await pgslice.enableMirroring(transaction, { table: "posts" });
-
-      const exitCode = await cli.run(
-        ["mirroring", "disable", "posts", "--drop"],
-        commandContext,
-      );
-
-      expect(exitCode).toBe(0);
-      const output = commandContext.stdout.read()?.toString();
-      expect(output).toContain("Mirroring triggers dropped for posts");
-
-      const remaining = await transaction.oneFirst(
-        sql.type(z.object({ count: z.coerce.number() }))`
-          SELECT (
-            (SELECT COUNT(*) FROM pg_trigger WHERE tgname = 'posts_mirror_trigger')
-            + (SELECT COUNT(*) FROM pg_proc WHERE proname = 'posts_mirror_to_intermediate')
-          )::int AS count
-        `,
-      );
-      expect(remaining).toBe(0);
     });
   });
 
