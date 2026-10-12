@@ -124,6 +124,22 @@ export class Pgslice {
     return this.pool.connect(handler);
   }
 
+  /**
+   * Bounds how long DDL in this transaction may wait for a table lock, so a
+   * contended run fails fast and is retried instead of queueing live traffic
+   * behind it. Uses the same default as `swap`.
+   */
+  async #setLockTimeout(
+    tx: DatabaseTransactionConnection,
+    lockTimeout: string | undefined,
+  ): Promise<void> {
+    await tx.query(
+      sql.typeAlias(
+        "void",
+      )`SET LOCAL lock_timeout = ${sql.literalValue(lockTimeout ?? "5s")}`,
+    );
+  }
+
   async #withLock<T>(
     tx: CommonQueryMethods,
     table: Table,
@@ -803,6 +819,7 @@ export class Pgslice {
           throw new Error(`Table not found: ${target.toString()}`);
         }
 
+        await this.#setLockTimeout(tx, options.lockTimeout);
         await new Mirroring({ source: table, targetType }).enable(tx, target);
       }),
     );
@@ -826,7 +843,13 @@ export class Pgslice {
           throw new Error(`Table not found: ${table.toString()}`);
         }
 
-        await new Mirroring({ source: table, targetType }).disable(tx);
+        await this.#setLockTimeout(tx, options.lockTimeout);
+        const mirroring = new Mirroring({ source: table, targetType });
+        if (options.drop) {
+          await mirroring.drop(tx);
+        } else {
+          await mirroring.disable(tx);
+        }
       }),
     );
   }
@@ -1014,14 +1037,20 @@ export class Pgslice {
       partitionCount = partitions.length;
     }
 
-    const mirrorTriggerExists = await table.triggerExists(
-      this.pool,
-      Mirroring.triggerNameFor(table, "intermediate"),
-    );
+    const mirroring = new Mirroring({
+      source: table,
+      targetType: "intermediate",
+    });
+    const retiredMirroring = new Mirroring({
+      source: table,
+      targetType: "retired",
+    });
 
-    const retiredMirrorTriggerExists = await table.triggerExists(
+    const mirrorTriggerExists = await mirroring.exists(this.pool);
+    const mirrorTriggerEnabled = await mirroring.enabled(this.pool);
+    const retiredMirrorTriggerExists = await retiredMirroring.exists(this.pool);
+    const retiredMirrorTriggerEnabled = await retiredMirroring.enabled(
       this.pool,
-      Mirroring.triggerNameFor(table, "retired"),
     );
 
     const originalIsPartitioned = await table.isPartitioned(this.pool);
@@ -1030,7 +1059,9 @@ export class Pgslice {
       intermediateExists,
       partitionCount,
       mirrorTriggerExists,
+      mirrorTriggerEnabled,
       retiredMirrorTriggerExists,
+      retiredMirrorTriggerEnabled,
       originalIsPartitioned,
     };
   }

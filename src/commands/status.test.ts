@@ -28,7 +28,9 @@ describe("StatusCommand", () => {
       intermediateExists: false,
       partitionCount: 0,
       mirrorTriggerExists: false,
+      mirrorTriggerEnabled: false,
       retiredMirrorTriggerExists: false,
+      retiredMirrorTriggerEnabled: false,
       originalIsPartitioned: false,
     });
   });

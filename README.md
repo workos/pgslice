@@ -144,6 +144,8 @@ pgslice disable_mirroring <table>
 
 After the swap, the original mirroring triggers are no longer needed since the tables have been swapped.
 
+This turns the trigger off rather than dropping it, which never blocks reads and cannot deadlock against live traffic on a partitioned table. Pass `--drop` to remove the trigger and its function; that takes an ACCESS EXCLUSIVE lock on the table, acquired before anything else so it is safe on a partitioned table too. Both forms honour `--lock-timeout` (default: `5s`).
+
 11. Enable Reverse Mirroring (now-partitioned table to retired table)
 
 This will make unswapping later less problematic as the two tables are kept in sync. Note that
@@ -168,7 +170,7 @@ pgslice fill <table> --swapped
 pgslice disable_retired_mirroring <table>
 ```
 
-Once you're confident the retired table is no longer needed and you're ready to drop it, disable the retired mirroring triggers.
+Once you're confident the retired table is no longer needed, disable the retired mirroring triggers. This turns the trigger off under a light lock, parent first, so it is safe to run against a busy partitioned table; `status` then reports the trigger as present but disabled. When you drop the retired table, run it again with `--drop` to remove the trigger and its function. Both forms honour `--lock-timeout` (default: `5s`).
 
 14. Back up the retired table with a tool like [pg_dump](https://www.postgresql.org/docs/current/static/app-pgdump.html) and drop it
 

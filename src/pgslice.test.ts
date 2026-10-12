@@ -680,7 +680,9 @@ describe("Pgslice.status", () => {
       intermediateExists: false,
       partitionCount: 0,
       mirrorTriggerExists: false,
+      mirrorTriggerEnabled: false,
       retiredMirrorTriggerExists: false,
+      retiredMirrorTriggerEnabled: false,
       originalIsPartitioned: false,
     });
   });
@@ -706,7 +708,9 @@ describe("Pgslice.status", () => {
       partitionCount: 0,
       originalIsPartitioned: false,
       mirrorTriggerExists: false,
+      mirrorTriggerEnabled: false,
       retiredMirrorTriggerExists: false,
+      retiredMirrorTriggerEnabled: false,
     });
   });
 });

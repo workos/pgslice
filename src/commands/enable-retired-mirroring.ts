@@ -34,10 +34,17 @@ export class EnableRetiredMirroringCommand extends BaseCommand {
   });
 
   table = Option.String({ required: true, name: "table" });
+  lockTimeout = Option.String("--lock-timeout", "5s", {
+    description: "Bound on how long to wait for the table lock",
+  });
 
   override async perform(pgslice: Pgslice): Promise<void> {
     await pgslice.start(async (tx) =>
-      pgslice.enableMirroring(tx, { table: this.table, targetType: "retired" }),
+      pgslice.enableMirroring(tx, {
+        table: this.table,
+        targetType: "retired",
+        lockTimeout: this.lockTimeout,
+      }),
     );
 
     this.context.stdout.write(
