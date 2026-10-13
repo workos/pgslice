@@ -16,9 +16,11 @@ export class DisableRetiredMirroringCommand extends BaseCommand {
       to the retired table. Use this when you no longer need to keep the retired
       table in sync with the main table.
 
-      The table is locked before the trigger is dropped, so this is safe on a
-      partitioned table under live traffic. The lock wait is bounded by
-      --lock-timeout; a timeout aborts cleanly and can be retried.
+      The table is locked before the trigger is dropped, parent first and
+      then its partitions, the same order application statements lock in,
+      so the drop cannot deadlock against live traffic. Statements on the
+      table queue behind the lock for the duration; the wait is bounded by
+      --lock-timeout, and a timeout aborts cleanly and can be retried.
     `,
     examples: [
       [
