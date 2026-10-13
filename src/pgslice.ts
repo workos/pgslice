@@ -803,6 +803,11 @@ export class Pgslice {
           throw new Error(`Table not found: ${target.toString()}`);
         }
 
+        await tx.query(
+          sql.typeAlias(
+            "void",
+          )`SET LOCAL lock_timeout = ${sql.literalValue(options.lockTimeout ?? "5s")}`,
+        );
         await new Mirroring({ source: table, targetType }).enable(tx, target);
       }),
     );
@@ -826,6 +831,11 @@ export class Pgslice {
           throw new Error(`Table not found: ${table.toString()}`);
         }
 
+        await tx.query(
+          sql.typeAlias(
+            "void",
+          )`SET LOCAL lock_timeout = ${sql.literalValue(options.lockTimeout ?? "5s")}`,
+        );
         await new Mirroring({ source: table, targetType }).disable(tx);
       }),
     );

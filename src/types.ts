@@ -97,6 +97,8 @@ export type { MirroringTargetType };
 export interface EnableMirroringOptions {
   table: string;
   targetType?: MirroringTargetType;
+  /** Bound on how long to wait for the table lock (default: 5s). */
+  lockTimeout?: string;
 }
 
 /**
@@ -105,6 +107,8 @@ export interface EnableMirroringOptions {
 export interface DisableMirroringOptions {
   table: string;
   targetType?: MirroringTargetType;
+  /** Bound on how long to wait for the table lock (default: 5s). */
+  lockTimeout?: string;
 }
 
 /**
