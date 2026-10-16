@@ -622,3 +622,31 @@ export function* extendRangesBackward(options: {
     end = start;
   }
 }
+
+/**
+ * The retention cutoff for a table: the start of the period `retention`
+ * periods before the one containing `now`. A partition whose range ends at or
+ * before this instant holds only data older than the retained window.
+ */
+export function retentionCutoff(
+  now: Date,
+  period: Period,
+  retention: number,
+): Date {
+  return advanceDate(roundDate(now, period), period, -retention);
+}
+
+/**
+ * Whether an existing partition lies entirely before `cutoff`. Only finite,
+ * bounded ranges qualify: DEFAULT and `MINVALUE`/`MAXVALUE` partitions are
+ * catch-alls with no finite end, so they are never considered expired.
+ */
+export function isExpired(range: ExistingRange, cutoff: Date): boolean {
+  return (
+    !range.isDefault &&
+    !range.lowerUnbounded &&
+    !range.upperUnbounded &&
+    range.upper !== null &&
+    range.upper.getTime() <= cutoff.getTime()
+  );
+}

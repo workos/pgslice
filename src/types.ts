@@ -86,6 +86,27 @@ export interface AddPartitionsOptions {
   lockTimeout?: string;
 }
 
+/**
+ * Options for the `drop_partitions` command.
+ */
+export interface DropPartitionsOptions {
+  table: string;
+  /**
+   * The reference "now" for computing the retention cutoff. Defaults to the
+   * current time.
+   */
+  now?: Date;
+  /**
+   * How long each `DROP TABLE` may wait on the parent's lock before backing
+   * off. Dropping a partition takes an `ACCESS EXCLUSIVE` lock on the parent,
+   * so every query against the table queues behind a waiting drop; keep this
+   * short. Any Postgres interval literal (e.g. "5s"). Defaults to "5s".
+   */
+  lockTimeout?: string;
+  /** When true, report the expired partitions without dropping any. */
+  dryRun?: boolean;
+}
+
 import type { MirroringTargetType } from "./mirroring.js";
 
 // Re-export for convenience
@@ -273,6 +294,12 @@ export interface MaintainOptions {
    */
   lockTimeout?: string;
   /**
+   * When true, also drop each table's expired partitions (see
+   * {@link DropPartitionsOptions}) after extending it. Only tables whose
+   * settings comment carries a `retention` are pruned. Defaults to false.
+   */
+  dropExpired?: boolean;
+  /**
    * The reference "now" for choosing each table's partition horizon. Defaults
    * to a single instant captured when the run starts, so a fleet run that
    * straddles a period boundary uses one consistent horizon for every table.
@@ -312,6 +339,8 @@ export interface MaintainResult {
   /** The partitioning model, or null if maintenance failed before it was determined. */
   model: PartitionModel | null;
   partitionsCreated: string[];
+  /** Expired partitions dropped this run (empty unless `dropExpired`). */
+  partitionsDropped: string[];
   partitionCount: number;
   /**
    * Whether every leaf partition has a replica identity usable for logical

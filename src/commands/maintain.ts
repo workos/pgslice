@@ -21,6 +21,11 @@ export class MaintainCommand extends BaseCommand {
       extending each table this checks that every leaf partition has a replica
       identity usable for logical replication, and exits non-zero if any does
       not.
+
+      With --drop-expired, each table whose settings comment carries a
+      \`retention:<N>\` also has its expired partitions dropped (see
+      drop_partitions) after it is extended. Tables without a retention setting
+      are never pruned.
     `,
     examples: [
       [
@@ -36,6 +41,10 @@ export class MaintainCommand extends BaseCommand {
         "PGSLICE_FUTURE_MONTHLY=12 $0 maintain",
       ],
       ["Restrict to a single schema", "$0 maintain --schema analytics"],
+      [
+        "Also drop partitions outside each table's retention window",
+        "$0 maintain --drop-expired",
+      ],
     ],
   });
 
@@ -75,7 +84,11 @@ export class MaintainCommand extends BaseCommand {
   });
   lockTimeout = Option.String("--lock-timeout", "5s", {
     description:
-      "How long each partition-creation statement waits on a table's lock before backing off (default: 5s)",
+      "How long each partition create or drop waits on a table's lock before backing off (default: 5s)",
+  });
+  dropExpired = Option.Boolean("--drop-expired", false, {
+    description:
+      "Also drop partitions outside each table's configured retention (default: false)",
   });
 
   override async perform(pgslice: Pgslice): Promise<number | void> {
@@ -103,6 +116,7 @@ export class MaintainCommand extends BaseCommand {
           tablespace: this.tablespace,
           inheritGrants: this.inheritGrants,
           lockTimeout: this.lockTimeout,
+          dropExpired: this.dropExpired,
         },
         log,
       ),

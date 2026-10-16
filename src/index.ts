@@ -1,5 +1,5 @@
 export { createCli } from "./cli.js";
-export { Pgslice } from "./pgslice.js";
+export { Pgslice, DropPartitionsError } from "./pgslice.js";
 export { Table } from "./table.js";
 export { Filler } from "./filler.js";
 export { AdvisoryLockError } from "./advisory-lock.js";

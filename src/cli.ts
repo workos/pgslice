@@ -4,6 +4,7 @@ import { AddPartitionsCommand } from "./commands/add-partitions.js";
 import { AnalyzeCommand } from "./commands/analyze.js";
 import { DisableMirroringCommand } from "./commands/disable-mirroring.js";
 import { DisableRetiredMirroringCommand } from "./commands/disable-retired-mirroring.js";
+import { DropPartitionsCommand } from "./commands/drop-partitions.js";
 import { EnableMirroringCommand } from "./commands/enable-mirroring.js";
 import { EnableRetiredMirroringCommand } from "./commands/enable-retired-mirroring.js";
 import { FillCommand } from "./commands/fill.js";
@@ -28,6 +29,7 @@ export function createCli(): Cli {
   cli.register(AnalyzeCommand);
   cli.register(DisableMirroringCommand);
   cli.register(DisableRetiredMirroringCommand);
+  cli.register(DropPartitionsCommand);
   cli.register(EnableMirroringCommand);
   cli.register(EnableRetiredMirroringCommand);
   cli.register(FillCommand);

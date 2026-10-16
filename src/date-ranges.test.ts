@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  isExpired,
+  retentionCutoff,
   DateRanges,
   advanceDate,
   extendRanges,
@@ -687,5 +689,56 @@ describe("extendRangesBackward", () => {
     for (const range of ranges) {
       expect(range.end.getTime()).toBeGreaterThan(range.start.getTime());
     }
+  });
+});
+
+describe("retentionCutoff", () => {
+  const now = new Date(Date.UTC(2026, 0, 15, 13, 30));
+
+  it("keeps the current period plus N prior periods", () => {
+    expect(retentionCutoff(now, "month", 3).toISOString()).toBe(
+      "2025-10-01T00:00:00.000Z",
+    );
+    expect(retentionCutoff(now, "day", 90).toISOString()).toBe(
+      "2025-10-17T00:00:00.000Z",
+    );
+    expect(retentionCutoff(now, "year", 1).toISOString()).toBe(
+      "2025-01-01T00:00:00.000Z",
+    );
+  });
+
+  it("anchors weeks on the ISO Monday", () => {
+    // 2026-01-15 is in the ISO week starting Monday 2026-01-12.
+    expect(retentionCutoff(now, "week", 2).toISOString()).toBe(
+      "2025-12-29T00:00:00.000Z",
+    );
+  });
+});
+
+describe("isExpired", () => {
+  const cutoff = new Date(Date.UTC(2025, 11, 1));
+  const range = (from: string, to: string): ExistingRange => ({
+    lower: new Date(from),
+    upper: new Date(to),
+    lowerUnbounded: false,
+    upperUnbounded: false,
+    isDefault: false,
+  });
+
+  it("is true only when the range ends at or before the cutoff", () => {
+    expect(isExpired(range("2025-10-01", "2025-11-01"), cutoff)).toBe(true);
+    expect(isExpired(range("2025-11-01", "2025-12-01"), cutoff)).toBe(true);
+    expect(isExpired(range("2025-11-15", "2025-12-15"), cutoff)).toBe(false);
+    expect(isExpired(range("2025-12-01", "2026-01-01"), cutoff)).toBe(false);
+  });
+
+  it("never treats DEFAULT or unbounded partitions as expired", () => {
+    const parsedDefault = parseRangeBound("DEFAULT");
+    expect(parsedDefault && isExpired(parsedDefault, cutoff)).toBe(false);
+
+    const minvalue = parseRangeBound(
+      "FOR VALUES FROM (MINVALUE) TO ('2020-01-01')",
+    );
+    expect(minvalue && isExpired(minvalue, cutoff)).toBe(false);
   });
 });
